@@ -131,7 +131,7 @@ body {
 }
 
 .pqc-tabs {
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .pqc-tabs .tab {
@@ -141,6 +141,10 @@ body {
   background: #fff !important;
   color: #2f6f83 !important;
   font-weight: 600;
+  padding: 8px 14px !important;
+  min-height: 44px !important;
+  line-height: 1.2 !important;
+  font-size: 16px !important;
 }
 
 .pqc-tabs .tab--selected {
@@ -259,36 +263,104 @@ body {
 
 .pqc-anomaly-controls {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  margin: 4px 0 8px;
-  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 6px;
+  padding: 6px 10px 4px;
+  border: 1px solid #c9dbe6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pqc-anomaly-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
 .pqc-anomaly-controls .pqc-field-label {
-  margin: 2px 0 0;
-  flex: 0 0 125px;
+  margin: 0;
+}
+
+.pqc-anomaly-fraction-value {
+  min-width: 56px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f5e73;
+  background: #e8f3f8;
+  border: 1px solid #b9ccda;
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 
 .pqc-anomaly-slider-wrap {
-  min-width: 460px;
-  width: min(760px, 100%);
-  padding-top: 1px;
+  min-width: 360px;
+  max-width: 780px;
+  width: 100%;
+  flex: 0 1 62%;
+  padding-top: 0;
 }
 
 .pqc-anomaly-slider-wrap .rc-slider {
   width: 100%;
-  margin: 0;
+  margin: 0 0 2px;
 }
 
 .pqc-anomaly-slider-wrap .rc-slider-mark {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .pqc-anomaly-slider-wrap .rc-slider-mark-text {
   font-size: 10px;
   white-space: nowrap;
   transform: translateX(-50%);
+}
+
+.pqc-anomaly-extra-controls {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.pqc-anomaly-control-block {
+  min-width: 160px;
+  width: 170px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.pqc-anomaly-control-block .pqc-field-label {
+  margin-bottom: 4px;
+}
+
+.pqc-anomaly-dropdown .Select-control {
+  min-height: 32px;
+  border: 1px solid #b9ccda;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.pqc-anomaly-dropdown .Select-placeholder,
+.pqc-anomaly-dropdown .Select-value-label {
+  line-height: 30px;
+  color: #1f3e59 !important;
+}
+
+.pqc-anomaly-dropdown .Select-menu-outer {
+  border: 1px solid #b9ccda;
+  border-radius: 6px;
+}
+
+.pqc-anomaly-dropdown .Select-option.is-focused {
+  background: #e8f3f8;
 }
 
 .pqc-anomaly-plot-area {
@@ -358,13 +430,12 @@ body {
   }
 
   .pqc-anomaly-controls {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
+    display: block;
+    padding: 6px 8px 3px;
   }
 
-  .pqc-anomaly-controls .pqc-field-label {
-    flex: 0 0 auto;
+  .pqc-anomaly-label-row {
+    margin-bottom: 5px;
   }
 
   .pqc-anomaly-slider-wrap {
@@ -374,6 +445,17 @@ body {
 
   .pqc-anomaly-slider-wrap .rc-slider {
     width: 100%;
+  }
+
+  .pqc-anomaly-extra-controls {
+    margin-top: 6px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .pqc-anomaly-control-block {
+    width: 100%;
+    min-width: 0;
   }
 
   .pqc-anomaly-plot-area {

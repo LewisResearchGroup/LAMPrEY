@@ -98,7 +98,8 @@ layout = html.Div(
             className="pqc-empty-state",
         ),
         dcc.Loading(
-            [
+            type="circle",
+            children=[
                 html.Div(
                     [
                         dcc.Graph(

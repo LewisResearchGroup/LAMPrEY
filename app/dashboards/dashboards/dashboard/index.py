@@ -76,7 +76,7 @@ BUTTON_STYLE = {
 
 layout = html.Div(
     [
-        dcc.Loading(dcc.Store(id="store")),
+        dcc.Loading(dcc.Store(id="store"), type="circle"),
         dcc.Store(id="qc-scope-data"),
         html.Button("", id="B_update", className="pqc-hidden-trigger"),
         html.Div(
@@ -239,7 +239,8 @@ layout = html.Div(
                                     ],
                                 ),
                                 dcc.Loading(
-                                    html.Div(
+                                    type="circle",
+                                    children=html.Div(
                                         id="qc-table-div",
                                         className="pqc-table-wrap",
                                         style={"display": "none"},

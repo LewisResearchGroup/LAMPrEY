@@ -81,7 +81,7 @@ layout = html.Div(
             style={"marginTop": "10px", "marginBottom": "10px"},
         ),
         html.Button("Update table", id="proteins-update", className="btn"),
-        dcc.Loading(proteins_table),
+        dcc.Loading(proteins_table, type="circle"),
         dcc.Dropdown(
             id="protein-plot-column",
             multi=False,
@@ -97,7 +97,8 @@ layout = html.Div(
         ),
         html.Button("Update figure", id="proteins-fig-update", className="btn"),
         dcc.Loading(
-            [
+            type="circle",
+            children=[
                 html.Div(style={"min-width": 400}),
                 dcc.Graph(
                     id="protein-figure",

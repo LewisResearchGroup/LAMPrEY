@@ -88,7 +88,8 @@ layout = html.Div(
                 dbc.Col(
                     [
                         dcc.Loading(
-                            [
+                            type="circle",
+                            children=[
                                 html.Div(style={"min-width": 300}),
                                 dcc.Graph(id="explorer-figure", style={"max-width": "100%"}),
                             ]
@@ -115,7 +116,8 @@ layout = html.Div(
                             value=[],
                         ),
                         dcc.Loading(
-                            dcc.Graph(
+                            type="circle",
+                            children=dcc.Graph(
                                 id="explorer-scatter-matrix",
                                 style={"max-width": "100%"},
                             ),

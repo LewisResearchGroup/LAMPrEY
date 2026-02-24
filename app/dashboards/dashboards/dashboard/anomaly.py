@@ -22,7 +22,13 @@ layout = html.Div(
         html.Div(
             className="pqc-anomaly-controls",
             children=[
-                html.Div("Outlier fraction", className="pqc-field-label"),
+                html.Div(
+                    className="pqc-anomaly-label-row",
+                    children=[
+                        html.Div("Outlier fraction", className="pqc-field-label"),
+                        html.Div("5%", id="anomaly-fraction-value", className="pqc-anomaly-fraction-value"),
+                    ],
+                ),
                 html.Div(
                     className="pqc-anomaly-slider-wrap",
                     children=[
@@ -32,9 +38,52 @@ layout = html.Div(
                             min=1,
                             max=100,
                             step=1,
-                            marks={i: {"label": f"{i}%"} for i in range(10, 110, 10)},
+                            marks={i: {"label": f"{i}%"} for i in [1] + list(range(5, 105, 5))},
                             tooltip={"placement": "bottom", "always_visible": False},
                         )
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-extra-controls",
+                    children=[
+                        html.Div(
+                            className="pqc-anomaly-control-block",
+                            children=[
+                                html.Div("Row order", className="pqc-field-label"),
+                                dcc.Dropdown(
+                                    id="anomaly-row-order",
+                                    className="pqc-anomaly-dropdown",
+                                    clearable=False,
+                                    searchable=False,
+                                    options=[
+                                        {"label": "Input order", "value": "input"},
+                                        {"label": "Most anomalous first", "value": "anomalous_first"},
+                                    ],
+                                    value="input",
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="pqc-anomaly-control-block",
+                            children=[
+                                html.Div("Metrics shown", className="pqc-field-label"),
+                                dcc.Dropdown(
+                                    id="anomaly-metric-count",
+                                    className="pqc-anomaly-dropdown",
+                                    clearable=False,
+                                    searchable=False,
+                                    options=[
+                                        {"label": "10", "value": 10},
+                                        {"label": "15", "value": 15},
+                                        {"label": "20", "value": 20},
+                                        {"label": "25", "value": 25},
+                                        {"label": "30", "value": 30},
+                                        {"label": "All", "value": "all"},
+                                    ],
+                                    value=20,
+                                ),
+                            ],
+                        ),
                     ],
                 ),
             ],
@@ -76,6 +125,13 @@ def callbacks(app):
             return text
         return f"{text[:max_len-1]}…"
 
+    def _short_label_keep_ends(value, max_len=30, tail_len=8):
+        text = str(value)
+        if len(text) <= max_len:
+            return text
+        head_len = max(8, max_len - tail_len - 1)
+        return f"{text[:head_len]}…{text[-tail_len:]}"
+
     def _pretty_metric_name(name):
         text = str(name)
         text = text.replace("_", " ")
@@ -84,6 +140,13 @@ def callbacks(app):
         text = text.replace("calibrated retention time qc1", "calibrated retention time qc1")
         text = text.replace("Uncalibrated - Calibrated m/z", "delta m/z")
         return text
+
+    @app.callback(
+        Output("anomaly-fraction-value", "children"),
+        Input("anomaly-fraction", "value"),
+    )
+    def render_fraction_value(value):
+        return f"{int(value or 0)}%"
 
     @app.callback(
         Output("shapley-values", "children"),
@@ -149,8 +212,10 @@ def callbacks(app):
         Input("shapley-values", "children"),
         Input("qc-scope-data", "data"),
         Input("tabs", "value"),
+        Input("anomaly-row-order", "value"),
+        Input("anomaly-metric-count", "value"),
     )
-    def plot_shapley(shapley_values, qc_data, tab):
+    def plot_shapley(shapley_values, qc_data, tab, row_order, metric_count):
         if tab != "anomaly" or shapley_values is None:
             return {}, T.gen_figure_config(filename="Anomaly-Detection-Shapley-values", editable=False), {"display": "block", "width": "100%", "height": "100%", "margin": "0"}
 
@@ -167,8 +232,18 @@ def callbacks(app):
         # samples on rows, QC metrics on columns
         fns = qc_data["RawFile"].astype(str)
         df_shap = df_shap.reindex(fns).fillna(0)
+
+        if row_order == "anomalous_first":
+            sample_rank = df_shap.abs().mean(axis=1).sort_values(ascending=False).index
+            df_shap = df_shap.reindex(sample_rank)
+
+        if metric_count != "all":
+            max_metrics = int(metric_count or 20)
+            metric_rank = df_shap.abs().mean(axis=0).sort_values(ascending=False).index
+            df_shap = df_shap.loc[:, metric_rank[:max_metrics]]
+
         df_plot = df_shap.copy()
-        df_plot.index = [_short_label(v, max_len=34) for v in df_plot.index]
+        df_plot.index = [_short_label_keep_ends(v, max_len=30, tail_len=8) for v in df_plot.index]
         df_plot.columns = [_short_label(_pretty_metric_name(c), max_len=30) for c in df_plot.columns]
 
         # Fit inside workspace canvas while remaining readable.
@@ -190,7 +265,7 @@ def callbacks(app):
         # Size & spacing
         fig.update_layout(
             width=None,
-            margin=dict(l=24, r=20, t=12, b=26),
+            margin=dict(l=14, r=20, t=6, b=24),
             coloraxis_colorbar=dict(
                 x=1.02,
                 y=0.48,
