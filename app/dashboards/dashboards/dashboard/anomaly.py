@@ -113,6 +113,12 @@ layout = html.Div(
         html.Div(
             className="pqc-anomaly-plot-area",
             children=[
+                html.Div(
+                    "No anomaly plot data available for this scope.",
+                    id="anomaly-empty-state",
+                    className="pqc-empty-state",
+                    style={"display": "none"},
+                ),
                 dcc.Loading(
                     id="anomaly-loading",
                     type="circle",
@@ -257,6 +263,7 @@ def callbacks(app):
         Output("anomaly-figure", "figure"),
         Output("anomaly-figure", "config"),
         Output("anomaly-figure", "style"),
+        Output("anomaly-empty-state", "style"),
         Input("shapley-values", "children"),
         Input("qc-scope-data", "data"),
         Input("tabs", "value"),
@@ -264,15 +271,36 @@ def callbacks(app):
         Input("anomaly-metric-count", "value"),
     )
     def plot_shapley(shapley_values, qc_data, tab, row_order, metric_count):
-        if tab != "anomaly" or shapley_values is None:
-            return {}, T.gen_figure_config(filename="Anomaly-Detection-Shapley-values", editable=False), {"display": "block", "width": "100%", "height": "100%", "margin": "0"}
+        config = T.gen_figure_config(
+            filename="Anomaly-Detection-Shapley-values",
+            editable=False,
+        )
+        config["displayModeBar"] = False
+        hidden_graph_style = {
+            "display": "none",
+            "width": "100%",
+            "height": "100%",
+            "margin": "0",
+        }
+        visible_graph_style = {
+            "display": "block",
+            "width": "100%",
+            "height": "100%",
+            "margin": "0",
+        }
 
-        df_shap = pd.read_json(shapley_values)
+        if tab != "anomaly":
+            return {}, config, hidden_graph_style, {"display": "none"}
+
         qc_data = pd.DataFrame(qc_data or [])
         if qc_data.empty:
-            return {}, T.gen_figure_config(filename="Anomaly-Detection-Shapley-values", editable=False), {"display": "block", "width": "100%", "height": "100%", "margin": "0"}
+            return {}, config, hidden_graph_style, {"display": "flex"}
         if "RawFile" not in qc_data.columns:
-            return {}, T.gen_figure_config(filename="Anomaly-Detection-Shapley-values", editable=False), {"display": "block", "width": "100%", "height": "100%", "margin": "0"}
+            return {}, config, hidden_graph_style, {"display": "flex"}
+        if shapley_values is None:
+            return {}, config, hidden_graph_style, {"display": "flex"}
+
+        df_shap = pd.read_json(shapley_values)
 
         fns = qc_data["RawFile"]
         df_shap = df_shap.loc[fns]
@@ -361,10 +389,4 @@ def callbacks(app):
         fig.update_xaxes(title_font=dict(size=12))
         fig.update_yaxes(title_font=dict(size=12), tickfont=dict(size=9))
 
-        config = T.gen_figure_config(
-            filename="Anomaly-Detection-Shapley-values",
-            editable=False
-        )
-        config["displayModeBar"] = False
-
-        return fig, config, {"display": "block", "width": "100%", "height": "100%", "margin": "0"}
+        return fig, config, visible_graph_style, {"display": "none"}
