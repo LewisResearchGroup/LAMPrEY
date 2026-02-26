@@ -1,4 +1,4 @@
-site_name: Proteomics QC
+site_name: LAMPrEY
 nav:
     - Home: index.md
     - Installation: installation.md
@@ -18,7 +18,29 @@ extra:
   analytics:
       provider: google
       property: G-9FFCYK4MWP   
+repo_name: ProteomicsQC
+repo_url: https://github.com/LewisResearchGroup/ProteomicsQC
 theme:
   name: material
-
+  custom_dir: docs/overrides
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+extra_css:
+  - stylesheets/extra.css
 
