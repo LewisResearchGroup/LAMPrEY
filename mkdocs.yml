@@ -1,19 +1,21 @@
 site_name: LAMPrEY
 nav:
     - Home: index.md
-    - Installation: installation.md
-    #- Setup an online server: server.md
-    #- User Manual: manual.md
-    - Admin panel: how-to-access-the-admin-panel.md
-    - Create a project: how-to-add-a-project.md
-    - Create a pipeline: how-to-add-a-pipeline.md
-    - Submit RAW files: how-to-submit-raw-files.md
-    - Datalake: datalake.md
-    - RawTools: rawtools.md
-    - MaxQuant: maxquant.md
-    - API: api.md
-    - About: about.md
-    - Help/Issues: issues.md
+    - Setup:
+        - Installation: installation.md
+        - Admin panel: how-to-access-the-admin-panel.md
+    - Usage:
+        - Create a project: how-to-add-a-project.md
+        - Create a pipeline: how-to-add-a-pipeline.md
+        - Submit RAW files: how-to-submit-raw-files.md
+    - Components:
+        - Datalake: datalake.md
+        - RawTools: rawtools.md
+        - MaxQuant: maxquant.md
+    - Resources:
+        - API: api.md
+        - About: about.md
+        - Help/Issues: issues.md
 extra:
   analytics:
       provider: google
