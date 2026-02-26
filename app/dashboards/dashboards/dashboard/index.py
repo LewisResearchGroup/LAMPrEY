@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import numpy as np
 from pathlib import Path as P
@@ -435,14 +436,10 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
             empty_options,
         )
     optional_columns = optional_columns or C.qc_columns_default
-    columns = C.qc_columns_always + optional_columns
-    query_columns = list(columns)
-    if "Uploader" not in query_columns:
-        query_columns.append("Uploader")
     data = T.get_qc_data(
         project=project,
         pipeline=pipeline,
-        columns=query_columns,
+        columns=None,
         data_range=None,
         uid=effective_uid,
     )
@@ -479,6 +476,16 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
             scope_style,
             empty_options,
         )
+
+    tmt_missing_cols = sorted(
+        [c for c in df.columns if re.match(r"^TMT\d+_missing_values$", str(c))],
+        key=lambda c: int(re.search(r"\d+", str(c)).group(0)),
+    )
+    selected_optional_cols = list(optional_columns or C.qc_columns_default)
+    for tmt_col in tmt_missing_cols:
+        if tmt_col not in selected_optional_cols:
+            selected_optional_cols.append(tmt_col)
+    columns = C.qc_columns_always + selected_optional_cols
 
     # keep only columns that exist to avoid key errors
     available_cols = [c for c in columns if c in df.columns]
@@ -577,7 +584,7 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
         _add_uploader_option(option.get("label", ""), option.get("value", ""))
 
     if (
-        (is_admin_session or len(uploader_options) > 1)
+        is_admin_session
         and uploader_filter
         and uploader_filter != "__all__"
         and "Uploader" in df.columns
@@ -587,7 +594,9 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
     df_display = df[available_cols] if len(available_cols) > 0 else pd.DataFrame(index=df.index)
 
     records = df.to_dict("records")
-    show_scope_user = bool(is_admin_session or len(uploader_options) > 1)
+    if not is_admin_session:
+        uploader_options = [{"label": "All users", "value": "__all__"}]
+    show_scope_user = bool(is_admin_session)
     scope_style = {"display": "block"} if show_scope_user else {"display": "none"}
     return (
         T.table_from_dataframe(df_display, id="qc-table", row_selectable="multi"),
@@ -596,6 +605,49 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
         scope_style,
         uploader_options,
     )
+
+
+@app.callback(
+    Output("qc-table-columns", "options"),
+    Output("qc-table-columns", "value"),
+    Input("qc-scope-data", "data"),
+    State("qc-table-columns", "value"),
+)
+def sync_qc_table_columns(scope_data, current_values):
+    base_options = list(C.qc_columns_options)
+    if not scope_data:
+        values = [v for v in list(current_values or C.qc_columns_default) if v in base_options]
+        if not values:
+            values = list(C.qc_columns_default)
+        return list_to_dropdown_options(base_options), values
+
+    df = pd.DataFrame(scope_data or [])
+    if df.empty:
+        values = [v for v in list(current_values or C.qc_columns_default) if v in base_options]
+        if not values:
+            values = list(C.qc_columns_default)
+        return list_to_dropdown_options(base_options), values
+
+    detected_tmt = sorted(
+        [c for c in df.columns if re.match(r"^TMT\d+_missing_values$", str(c))],
+        key=lambda c: int(re.search(r"\d+", str(c)).group(0)),
+    )
+
+    dynamic_options = [c for c in base_options if c in df.columns and c not in C.qc_columns_always]
+    for col in detected_tmt:
+        if col not in dynamic_options:
+            dynamic_options.append(col)
+
+    valid_current = [c for c in list(current_values or []) if c in dynamic_options]
+    if valid_current:
+        return list_to_dropdown_options(dynamic_options), valid_current
+
+    dynamic_defaults = [c for c in C.qc_columns_default if c in dynamic_options]
+    for col in detected_tmt:
+        if col not in dynamic_defaults:
+            dynamic_defaults.append(col)
+
+    return list_to_dropdown_options(dynamic_options), dynamic_defaults
 
 
 @app.callback(

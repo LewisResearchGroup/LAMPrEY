@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import numbers
 
 # from xml.etree.ElementPath import _SelectorContext
 import requests
@@ -449,6 +450,48 @@ def plotly_heatmap(
         return fig
 
 
+def _normalize_max_features(max_features, n_features):
+    """
+    Normalize max_features for anomaly models.
+    - int-like values are capped to [1, n_features]
+    - float values in (0, 1] are kept as-is (fraction semantics)
+    - float values > 1 are treated as absolute counts and capped
+    - numeric strings are parsed to int/float using the same rules
+    - invalid values return None so model defaults are used
+    """
+    if max_features is None:
+        return None
+
+    if n_features <= 0:
+        return None
+
+    if isinstance(max_features, (bool, np.bool_)):
+        return None
+
+    value = max_features
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            value = float(stripped) if "." in stripped else int(stripped)
+        except ValueError:
+            return None
+
+    if isinstance(value, (int, np.integer)):
+        return max(1, min(int(value), n_features))
+
+    if isinstance(value, (float, np.floating)) or isinstance(value, numbers.Real):
+        value = float(value)
+        if value <= 0:
+            return 1
+        if value <= 1:
+            return value
+        return max(1, min(int(value), n_features))
+
+    return None
+
+
 def detect_anomalies(
     qc_data,
     algorithm=None,
@@ -474,11 +517,9 @@ def detect_anomalies(
     if not selected_cols:
         raise ValueError("No numeric columns available for anomaly detection")
     selected_cols.reverse()
-    if max_features is not None:
-        if isinstance(max_features, (int, np.integer)):
-            max_features = min(max_features, len(selected_cols))
-            max_features = max(1, max_features)
-        model_kws["max_features"] = max_features
+    normalized_max_features = _normalize_max_features(max_features, len(selected_cols))
+    if normalized_max_features is not None:
+        model_kws["max_features"] = normalized_max_features
     log_cols = [
         "Ms1MedianSummedIntensity",
         "Ms2MedianSummedIntensity",

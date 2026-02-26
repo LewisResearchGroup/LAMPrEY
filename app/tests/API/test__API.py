@@ -1,4 +1,6 @@
 from django.test import TestCase
+from datetime import date
+from unittest.mock import patch
 from project.models import Project
 from maxquant.models import Pipeline
 
@@ -10,6 +12,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from django.test import Client
 from user.models import User
+from api.views import get_protein_quant_fn
 
 URL = "http://localhost:8000"
 
@@ -56,7 +59,7 @@ class ApiTestCase(TestCase):
         ).json()
         expected = [
             {
-                "pk": 1,
+                "pk": self.project.pk,
                 "name": "project",
                 "description": "A test project",
                 "slug": "project",
@@ -138,3 +141,36 @@ class ApiTestCase(TestCase):
             "raw_files": ["fake.raw"],
         })
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    def test__get_protein_quant_fn_data_range_limits_results(self):
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake-1.raw", b"..."),
+            created_by=self.user,
+            created=date(2024, 1, 1),
+        )
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake-2.raw", b"..."),
+            created_by=self.user,
+            created=date(2024, 1, 2),
+        )
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake-3.raw", b"..."),
+            created_by=self.user,
+            created=date(2024, 1, 3),
+        )
+
+        with patch(
+            "maxquant.Result.Result.create_protein_quant",
+            side_effect=lambda: "protein_quant.parquet",
+        ):
+            fns = get_protein_quant_fn(
+                self.project.slug,
+                self.pipeline.slug,
+                data_range=2,
+                user=self.user,
+            )
+
+        assert len(fns) == 2, fns

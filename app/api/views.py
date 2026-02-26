@@ -347,8 +347,6 @@ def get_protein_quant_fn(
 
     if data_range is not None:
         n_results = len(results)
-        if data_range is None:
-            data_range = len(results) + 1
 
         if (n_results > data_range) and (n_results > 0):
             results = results.order_by("raw_file__created")[n_results - data_range :]

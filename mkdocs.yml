@@ -1,4 +1,4 @@
-site_name: LAMPrEY
+site_name: LAMPrEY Documentation
 nav:
     - Home: index.md
     - Setup:
