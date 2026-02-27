@@ -2,6 +2,7 @@ from django.http.response import HttpResponse
 import pandas as pd
 import numpy as np
 import logging
+import re
 
 import dask.dataframe as dd
 
@@ -375,6 +376,116 @@ def get_protein_groups_data(
     return df
 
 def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
+    def _extract_tmt_peptide_counts(result_obj):
+        """Count detected peptides per TMT channel from evidence.txt for a run."""
+        fn = result_obj.output_dir_maxquant / "evidence.txt"
+        if not fn.is_file():
+            return {}
+        try:
+            header = pd.read_csv(fn, sep="\t", nrows=0)
+        except Exception:
+            return {}
+
+        available = list(header.columns)
+        reporter_cols = [
+            c for c in available
+            if isinstance(c, str) and c.startswith("Reporter intensity corrected ")
+        ]
+        if len(reporter_cols) == 0:
+            return {}
+
+        usecols = list(reporter_cols)
+        has_sequence = "Sequence" in available
+        if has_sequence:
+            usecols.append("Sequence")
+        try:
+            evidence = pd.read_csv(fn, sep="\t", usecols=usecols, low_memory=False)
+        except Exception:
+            return {}
+        if evidence.empty:
+            return {}
+
+        channel_to_cols = {}
+        for col in reporter_cols:
+            match = re.search(r"\b(\d+)\b", str(col))
+            if match is None:
+                continue
+            channel_no = int(match.group(1))
+            channel_to_cols.setdefault(channel_no, []).append(col)
+
+        out = {}
+        for channel_no in sorted(channel_to_cols):
+            cols = channel_to_cols[channel_no]
+            channel_values = evidence[cols].apply(pd.to_numeric, errors="coerce")
+            # Prefer max across duplicate channel columns (e.g. experiment suffixes).
+            detected = channel_values.max(axis=1, skipna=True).fillna(0) > 0
+            if has_sequence:
+                seq = evidence.loc[detected, "Sequence"].dropna().astype(str).str.strip()
+                seq = seq[seq != ""]
+                count = int(seq.nunique())
+            else:
+                count = int(detected.sum())
+            out[f"TMT{channel_no}_peptide_count"] = count
+
+        return out
+
+    def _extract_tmt_protein_group_counts(result_obj):
+        """Count detected protein groups per TMT channel from proteinGroups.txt for a run."""
+        fn = result_obj.output_dir_maxquant / "proteinGroups.txt"
+        if not fn.is_file():
+            return {}
+        try:
+            header = pd.read_csv(fn, sep="\t", nrows=0)
+        except Exception:
+            return {}
+
+        available = list(header.columns)
+        reporter_cols = [
+            c for c in available
+            if isinstance(c, str) and c.startswith("Reporter intensity corrected ")
+        ]
+        if len(reporter_cols) == 0:
+            return {}
+
+        id_col = None
+        for candidate in ["Majority protein IDs", "Protein IDs"]:
+            if candidate in available:
+                id_col = candidate
+                break
+
+        usecols = list(reporter_cols)
+        if id_col is not None:
+            usecols.append(id_col)
+        try:
+            proteins = pd.read_csv(fn, sep="\t", usecols=usecols, low_memory=False)
+        except Exception:
+            return {}
+        if proteins.empty:
+            return {}
+
+        channel_to_cols = {}
+        for col in reporter_cols:
+            match = re.search(r"\b(\d+)\b", str(col))
+            if match is None:
+                continue
+            channel_no = int(match.group(1))
+            channel_to_cols.setdefault(channel_no, []).append(col)
+
+        out = {}
+        for channel_no in sorted(channel_to_cols):
+            cols = channel_to_cols[channel_no]
+            channel_values = proteins[cols].apply(pd.to_numeric, errors="coerce")
+            detected = channel_values.max(axis=1, skipna=True).fillna(0) > 0
+            if id_col is not None:
+                ids = proteins.loc[detected, id_col].dropna().astype(str).str.strip()
+                ids = ids[ids != ""]
+                count = int(ids.nunique())
+            else:
+                count = int(detected.sum())
+            out[f"TMT{channel_no}_protein_group_count"] = count
+
+        return out
+
     def _normalize_index_column(frame):
         if frame is None or frame.empty:
             return frame
@@ -409,6 +520,7 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
     rts = []
 
     metadata_rows = []
+    tmt_peptide_rows = []
     for result in results:
         raw_fn = P(result.raw_file.name).with_suffix("").name
         raw_is_flagged = result.raw_file.flagged
@@ -425,6 +537,13 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
                 "Flagged": raw_is_flagged,
                 "Use Downstream": raw_use_downstream,
                 "Uploader": raw_uploader,
+            }
+        )
+        tmt_peptide_rows.append(
+            {
+                "RunKey": f"rf{raw_file_id}",
+                **_extract_tmt_peptide_counts(result),
+                **_extract_tmt_protein_group_counts(result),
             }
         )
         try:
@@ -456,6 +575,7 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
             logging.error(f"{e}: {rt}")
 
     metadata = pd.DataFrame(metadata_rows)
+    tmt_peptide_df = pd.DataFrame(tmt_peptide_rows)
 
     if (rt is None) and (mq is not None):
         df = mq
@@ -502,6 +622,18 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
             df["RawFile"] = df["RawFile"].fillna(df["RawFile_meta"])
         if "RawFile_meta" in df.columns:
             df = df.drop(columns=["RawFile_meta"])
+
+    if (
+        tmt_peptide_df is not None
+        and not tmt_peptide_df.empty
+        and "RunKey" in df.columns
+    ):
+        df = pd.merge(
+            df,
+            tmt_peptide_df,
+            on=["RunKey"],
+            how="left",
+        )
 
     # Final fallback: fill uploader directly from RunKey mapping when merge
     # produced missing values.

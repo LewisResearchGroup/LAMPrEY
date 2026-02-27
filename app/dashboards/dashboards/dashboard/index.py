@@ -738,6 +738,32 @@ def update_table_selection(
     selected_rows,
     virtual_ndxs,
 ):
+    selected_rows = list(selected_rows or [])
+    virtual_ndxs = list(virtual_ndxs or [])
+
+    def _point_to_row(point):
+        # Prefer explicit row mapping provided by traces (works for heatmaps/expanded views).
+        custom = point.get("customdata")
+        if isinstance(custom, (int, float)) and int(custom) == custom:
+            row_pos = int(custom)
+            if 0 <= row_pos < len(virtual_ndxs):
+                return virtual_ndxs[row_pos]
+            return row_pos
+
+        point_index = point.get("pointIndex")
+        if isinstance(point_index, (int, float)) and int(point_index) == point_index:
+            point_index = int(point_index)
+            if 0 <= point_index < len(virtual_ndxs):
+                return virtual_ndxs[point_index]
+        return None
+
+    def _extend_rows_from_points(points):
+        rows = []
+        for point in list(points or []):
+            row = _point_to_row(point)
+            if row is not None:
+                rows.append(row)
+        return rows
 
     # Workaround a bug, this callback is triggered without trigger
     if len(dash.callback_context.triggered) == 0:
@@ -762,16 +788,17 @@ def update_table_selection(
 
     if changed_id == "qc-figure.selectedData":
         points = selectedData["points"]
-        ndxs = [virtual_ndxs[p["pointIndex"]] for p in points]
+        ndxs = _extend_rows_from_points(points)
         selected_rows.extend(ndxs)
 
     if changed_id == "qc-figure.clickData":
-        ndx = clickData["points"][0]["pointIndex"]
-        ndx = virtual_ndxs[ndx]
-        if ndx in selected_rows:
-            selected_rows.remove(ndx)
-        else:
-            selected_rows.append(ndx)
+        point = clickData["points"][0]
+        ndx = _point_to_row(point)
+        if ndx is not None:
+            if ndx in selected_rows:
+                selected_rows.remove(ndx)
+            else:
+                selected_rows.append(ndx)
 
     if changed_id == "explorer-figure.clickData":
         ndx = explorerClickData["points"][0]["pointIndex"]
@@ -783,7 +810,7 @@ def update_table_selection(
 
     if changed_id == "explorer-figure.selectedData":
         points = explorerSelectedData["points"]
-        ndxs = [virtual_ndxs[p["pointIndex"]] for p in points]
+        ndxs = _extend_rows_from_points(points)
         selected_rows.extend(ndxs)
 
     if changed_id == "explorer-scatter-matrix.clickData":
@@ -796,7 +823,7 @@ def update_table_selection(
 
     if changed_id == "explorer-scatter-matrix.selectedData":
         points = explorerScatterMatrixSelectedData["points"]
-        ndxs = [virtual_ndxs[p["pointIndex"]] for p in points]
+        ndxs = _extend_rows_from_points(points)
         selected_rows.extend(ndxs)
 
     selected_rows = list(dict.fromkeys(selected_rows))
