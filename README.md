@@ -6,7 +6,8 @@ A quality control (QC) pipeline server for quantitative proteomics, automated pr
 The server allows to setup multiple proteomics pipelines grouped by projects. 
 The user can drag and drop new RAW mass spectrometry files which are processed automatically. 
 Results are visualized in an interactive dashboard and accessible via a RESTful API for third party applications and extensions.
-The server can be started with a single command using `docker-compose`.
+The server can be started with Docker Compose using either `docker-compose`
+or `docker compose`.
 Underlying software is _MaxQuant_ and _RawTools_ for proteomics, _Django_ for the web-server and API and _Plotly/Dash_ for the interactive dashboard.
 
 More information can be found in the [Documentation](https://LewisResearchGroup.github.io/ProteomicsQC/).
@@ -17,19 +18,22 @@ This repository contains git submodules and should be cloned with:
 
     git clone --recursive git@github.com:LewisResearchGroup/ProteomicsQC.git
 
-After cloning the repository a configuration file needs to be created and edited.
+After cloning the repository, generate the configuration:
 
     ./scripts/generate_config.sh  # generates a .env file for configuration
 
-This will create the `.env` file in the root directory of ProteomicsQC.
+This creates the `.env` file in the repository root and initializes the local
+`./data` directories used by the containers.
 
     #.env content
     # OMICS PIPELINES CONFIG
     
-    ## HOMPAGE SETTINGS
-    HOME_TITLE=ProteomicsQC
+    ## HOMEPAGE SETTINGS
+    HOME_TITLE='Proteomics Pipelines'
     HOSTNAME=localhost
     ALLOWED_HOSTS=localhost
+    CSRF_TRUSTED_ORIGINS=http://localhost
+    OMICS_URL=http://localhost:8000
     
     ## STORAGE
     DATALAKE=./data/datalake
@@ -75,16 +79,17 @@ The storage section defines the relative or absolute paths to the file system of
 Importantly, for production the location of the static folder should be exposed by your server under `https://your-url/static`, since
 Django does not serve static files in production. We recommend using NGINX to serve the static files. 
 
-To enable email-notifications (e.g. for authentification, or password changes) from the server the EMAIL settings need to be updated with information from your email provider.
+To enable email notifications, update the email settings with information from your provider.
 If you use your own domain to serve ProteomicsQC, you need to add it to the `ALLOWED_HOSTS` as a comma separated list:
     
     HOSTNAME=localhost
     ALLOWED_HOSTS=localhost,your-url,your-internal-ip
-    OMICS_URL=http://localhost:8080
+    CSRF_TRUSTED_ORIGINS=http://localhost,https://your-url
+    OMICS_URL=https://your-url
 
 You can start the server with the following commands:
 
-    make init  # to start the server the first time
+    make init  # first-time setup: build, migrate, createsuperuser, collectstatic
 
     make devel  # starts a development server on port 8000
     

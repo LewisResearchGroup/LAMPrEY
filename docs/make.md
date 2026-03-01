@@ -1,14 +1,17 @@
-The docker-compose setup spins up two docker containers. One for the 
-web-page and one for the the postgres database.
+The Docker Compose setup starts the web application, PostgreSQL, Redis, and a Celery worker.
 
-`make build` to build the containers
+`make build` builds the Docker images.
 
-`make migrations` to create database migrations
+`make migrations` creates Django migrations.
 
-`make migrate` to migrate the database
+`make migrate` applies Django migrations.
 
-`make createsuperuser` to create credentials for a superuser
+`make createsuperuser` creates a Django superuser.
 
-`make run` to run the website and postgres database. 
+`make devel` starts the development stack on port `8000`.
 
-`make init` initiate the database
+`make serve` starts the production stack on port `8080`.
+
+`make init` performs the full first-time setup.
+
+`make down` stops both development and production stacks.

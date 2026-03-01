@@ -3,11 +3,12 @@
 echo '# OMICS PIPELINES CONFIG' > .env
 
 echo """
-## HOMPAGE SETTINGS
+## HOMEPAGE SETTINGS
 HOME_TITLE='Proteomics Pipelines'
 HOSTNAME=localhost
 ALLOWED_HOSTS=localhost
 CSRF_TRUSTED_ORIGINS=http://localhost
+OMICS_URL=http://localhost:8000
 """ >> .env
 
 echo """## STORAGE
