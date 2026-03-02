@@ -388,9 +388,11 @@ body {
 .pqc-protein-intensity-dropdown.Select--multi .Select-multi-value-wrapper {
   display: flex;
   align-items: center;
+  align-content: center;
   flex-wrap: wrap;
   min-height: 38px;
-  padding: 0 6px;
+  padding: 4px 6px 2px;
+  box-sizing: border-box;
 }
 
 .pqc-protein-intensity-dropdown.Select--multi .Select-value-label {

@@ -144,13 +144,15 @@ def get_protein_groups(
     if columns is None or protein_names is None:
         return {}
     try:
-        fns = get_protein_quant_fn(project, pipeline, data_range=data_range, user=user)
+        fns = get_protein_quant_fn(
+            project,
+            pipeline,
+            data_range=data_range,
+            user=user,
+            raw_files=raw_files,
+        )
         if len(fns) == 0:
             return {}
-        if raw_files is not None:
-            fns = [fn for fn in fns if P(fn).stem in raw_files]
-            if len(fns) == 0:
-                return {}
         columns = list(columns)
         if "Reporter intensity corrected" in columns:
             df = pd.read_parquet(fns[0])
@@ -176,9 +178,13 @@ def get_protein_names(
     if user is None:
         return {}
     try:
-        fns = get_protein_quant_fn(project, pipeline, data_range=data_range, user=user)
-        if raw_files is not None:
-            fns = [fn for fn in fns if P(fn).stem in raw_files]
+        fns = get_protein_quant_fn(
+            project,
+            pipeline,
+            data_range=data_range,
+            user=user,
+            raw_files=raw_files,
+        )
         if len(fns) == 0:
             return {}
         cols = ["Majority protein IDs", "Fasta headers", "Score", "Intensity"]

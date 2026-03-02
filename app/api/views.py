@@ -362,6 +362,17 @@ def get_protein_quant_fn(
     only_use_downstream=False,
     raw_files=None,
 ):
+    def _normalize_raw_name(value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        lowered = text.lower()
+        if lowered in {"none", "nan"}:
+            return None
+        return P(text).stem.lower()
+
     pipeline = _pipelines_for_user(user).filter(
         project__slug=project_slug, slug=pipeline_slug
     ).first()
@@ -369,8 +380,26 @@ def get_protein_quant_fn(
         return []
     results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
 
+    if raw_files is not None:
+        requested_raws = {
+            normalized
+            for normalized in (_normalize_raw_name(raw) for raw in raw_files)
+            if normalized
+        }
+        if requested_raws:
+            results = [
+                res
+                for res in results
+                if _normalize_raw_name(res.raw_file.logical_name) in requested_raws
+            ]
+        else:
+            results = []
+
     if only_use_downstream:
-        results = results.filter(raw_file__use_downstream=True)
+        if isinstance(results, list):
+            results = [res for res in results if res.raw_file.use_downstream]
+        else:
+            results = results.filter(raw_file__use_downstream=True)
 
     if data_range is not None:
         n_results = len(results)
@@ -394,11 +423,17 @@ def get_protein_groups_data(
     protein_names,
     protein_col="Majority protein IDs",
 ):
+    def _normalize_display_rawfile(value):
+        if value is None:
+            return None
+        stem = P(str(value)).stem
+        return re.sub(r"^[0-9a-f]{32}_", "", stem, flags=re.IGNORECASE)
+
     ddf = dd.read_parquet(fns, engine="pyarrow")
     ddf = ddf[ddf[protein_col].isin(protein_names)]
     ddf = ddf[["RawFile", protein_col] + columns]
     df = ddf.compute().reset_index(drop=True)
-    df["RawFile"] = df["RawFile"].apply(lambda x: P(x).stem)
+    df["RawFile"] = df["RawFile"].apply(_normalize_display_rawfile)
     return df
 
 def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
