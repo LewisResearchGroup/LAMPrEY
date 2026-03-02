@@ -61,14 +61,14 @@ services:
       - ENVIRONMENT=develop
       - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
       - CSRF_TRUSTED_ORIGINS=http://localhost,http://127.0.0.1,http://0.0.0.0:8000
-    volumes:
-      - ./app/:/app/
-      - ${DATALAKE}:/datalake/
-      - ${COMPUTE}:/compute/
       - DB_HOST=db
       - DB_NAME=app
       - DB_USER=postgres
       - DB_PASS=postgres
+    volumes:
+      - ./app/:/app/
+      - ${DATALAKE}:/datalake/
+      - ${COMPUTE}:/compute/
     depends_on:
       - db
       - redis
