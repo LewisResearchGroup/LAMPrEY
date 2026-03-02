@@ -70,6 +70,7 @@
               <li class="home-recent-item">
                 <a href="{{ run.url }}" class="home-recent-main">
                   <strong>{{ run.name }}</strong>
+                  <span class="mq-user-name">{{ run.display_ref }}</span>
                   <span>{{ run.project_name }} / {{ run.pipeline_name }}</span>
                 </a>
                 <span class="status-pill status-{{ run.status }}">{{ run.status|upper }}</span>

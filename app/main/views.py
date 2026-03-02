@@ -109,7 +109,8 @@ def home(request):
             project = pipeline.project
             recent_runs.append(
                 {
-                    "name": run.name,
+                    "name": run.raw_file.logical_name,
+                    "display_ref": run.raw_file.display_ref,
                     "status": run.overall_status,
                     "project_name": project.name,
                     "pipeline_name": pipeline.name,
@@ -159,7 +160,7 @@ def home(request):
         step_4_note = "Open run results and QC plots."
         if latest_run is not None:
             step_4_url = latest_run.url
-            step_4_note = f"Resume latest run: {latest_run.name}."
+            step_4_note = f"Resume latest run: {latest_run.raw_file.logical_name}."
         elif latest_pipeline is not None:
             step_4_url = latest_pipeline.url
             step_4_note = "No runs yet. Open a pipeline and submit files."
