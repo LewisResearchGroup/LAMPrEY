@@ -32,7 +32,7 @@ class RawFileAdmin(admin.ModelAdmin):
         "created_by",
     )
 
-    list_filter = ("pipeline__project", "pipeline", "created_by", "use_downstream", "flagged")
+    list_filter = ()
 
     search_fields = ("orig_file", "pipeline__name", "pipeline__project__name", "created_by__email")
 
@@ -41,6 +41,9 @@ class RawFileAdmin(admin.ModelAdmin):
     ordering = ("-created",)
 
     actions = ("allow_use_downstream", "prevent_use_downstream", "save_and_run")
+
+    class Media:
+        css = {"all": ("css/admin-shared-changelist.css",)}
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -82,9 +85,10 @@ class PipelineAdmin(admin.ModelAdmin):
 
     ordering = ("name",)
 
-    list_filter = ("project", "created_by")
+    list_filter = ()
 
     list_display = ("name", "project", "created", "created_by")
+    search_fields = ("name", "project__name", "created_by__email", "description")
 
     sortable_by = ("name", "created", "pipeline")
 
@@ -132,6 +136,9 @@ class PipelineAdmin(admin.ModelAdmin):
                 "download_fasta",
                 "download_mqpar",
             )
+
+    class Media:
+        css = {"all": ("css/admin-shared-changelist.css",)}
 
 
 class ResultAdmin(admin.ModelAdmin):
@@ -213,7 +220,7 @@ class ResultAdmin(admin.ModelAdmin):
 
     ordering = ("-created",)
 
-    list_filter = ("raw_file__pipeline__project", "raw_file__pipeline", "created_by")
+    list_filter = ()
 
     search_fields = (
         "raw_file__orig_file",
@@ -284,6 +291,9 @@ class ResultAdmin(admin.ModelAdmin):
         rerun_rawtools_qc,
         rerun_rawtools_metrics,
     ]
+
+    class Media:
+        css = {"all": ("css/admin-shared-changelist.css",)}
 
 
 class MaxQuantExecutableAdmin(admin.ModelAdmin):
