@@ -14,6 +14,8 @@ htmlcov
 Untitled*.ipynb
 nohup.out
 data
+!app/tests/omics/data/
+!app/tests/omics/data/**
 node_modules/
 logs.log
 venv/
