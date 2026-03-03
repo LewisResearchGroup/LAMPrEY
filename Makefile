@@ -10,11 +10,21 @@ else
 SUDO ?= sudo
 endif
 
+PYTHON ?= /opt/conda/bin/python
+RUN_WEB = $(SUDO) $(COMPOSE) run --rm web
+RUN_WEB_LOCAL = $(SUDO) $(COMPOSE) -f docker-compose-develop.yml run --rm web
+
 migrate: 
-	$(SUDO) $(COMPOSE) run web python manage.py migrate
+	$(RUN_WEB) $(PYTHON) manage.py migrate
 
 migrations: 
-	$(SUDO) $(COMPOSE) run web python manage.py makemigrations $(ARGS)
+	$(RUN_WEB) $(PYTHON) manage.py makemigrations $(ARGS)
+
+migrate-local:
+	$(RUN_WEB_LOCAL) $(PYTHON) manage.py migrate
+
+migrations-local:
+	$(RUN_WEB_LOCAL) $(PYTHON) manage.py makemigrations $(ARGS)
 
 run:
 	$(SUDO) $(COMPOSE) down && $(SUDO) $(COMPOSE) up
@@ -58,17 +68,26 @@ devel-build:
 build:
 	$(SUDO) $(COMPOSE) build
 
+build-local:
+	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml build
+
 createsuperuser:
-	$(SUDO) $(COMPOSE) run web python manage.py createsuperuser
+	$(RUN_WEB) $(PYTHON) manage.py createsuperuser
+
+createsuperuser-local:
+	$(RUN_WEB_LOCAL) $(PYTHON) manage.py createsuperuser
 
 collectstatic:
-	$(SUDO) $(COMPOSE) run web python manage.py collectstatic
+	$(RUN_WEB) $(PYTHON) manage.py collectstatic --noinput
+
+collectstatic-local:
+	$(RUN_WEB_LOCAL) $(PYTHON) manage.py collectstatic --noinput
 
 showenv:
-	$(SUDO) $(COMPOSE) run web pip list
+	$(RUN_WEB) pip list
 
 manage:
-	$(SUDO) $(COMPOSE) run web python manage.py $(CMD)
+	$(RUN_WEB) $(PYTHON) manage.py $(CMD)
 
 reset_migrations:
 	sudo find . -path "*/migrations/*.pyc"  -delete
@@ -87,6 +106,19 @@ init:
 	make collectstatic
 	make bootstrap-demo
 
+init-local:
+	make build-local
+	make migrations-local
+	make migrations-local ARGS=user
+	make migrations-local ARGS=maxquant
+	make migrations-local ARGS=api
+	make migrations-local ARGS=project
+	make migrations-local ARGS=dashboards
+	make migrate-local
+	make createsuperuser-local
+	make collectstatic-local
+	make bootstrap-demo-local
+
 update:
 	git pull --recurse-submodules
 	make build
@@ -98,7 +130,7 @@ down:
 	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml down
 
 test: 
-	$(SUDO) $(COMPOSE) -f docker-compose-test.yml run web python manage.py test --noinput
+	$(SUDO) $(COMPOSE) -f docker-compose-test.yml run --rm web $(PYTHON) manage.py test --noinput
 
 get-test-data:
 	gdown --folder https://drive.google.com/drive/folders/1kdQUXbr6DTBNLFBXLYrR_RLoXDFwCh_N?usp=sharing --output app/tests/data/D01
@@ -107,10 +139,13 @@ doc:
 	mkdocs gh-deploy
 
 schema:
-	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml run web python manage.py graph_models --arrow-shape normal -o schema.png -a 
+	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml run --rm web $(PYTHON) manage.py graph_models --arrow-shape normal -o schema.png -a 
 
 versions:
 	$(SUDO) $(COMPOSE) run web conda env export -n base
 
 bootstrap-demo:
-	$(SUDO) $(COMPOSE) run web python manage.py bootstrap_demo --user $${DEMO_USER:-user@email.com} --with-results
+	$(RUN_WEB) $(PYTHON) manage.py bootstrap_demo --user $${DEMO_USER:-user@email.com} --with-results
+
+bootstrap-demo-local:
+	$(RUN_WEB_LOCAL) $(PYTHON) manage.py bootstrap_demo --user $${DEMO_USER:-user@email.com} --with-results

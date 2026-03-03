@@ -7,19 +7,30 @@ The supported setup is Docker-based. Install:
 - Docker Engine
 - Docker Compose, either as `docker-compose` or `docker compose`
 - `make`
-- `curl`
-- `openssl`
 
-The repository Makefile supports both Compose command styles. If your Docker setup requires elevated privileges, run the `make` targets with a user that can use `sudo`; otherwise they run without it. Docker installation instructions can be found in [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
+Install Docker Engine and Docker Compose by following the Docker documentation for your platform. For Ubuntu, see [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
+
+This guide uses `make` targets such as `make init` and `make devel` as shortcuts for Docker Compose commands. If your Docker setup requires elevated privileges, run the `make` targets with a user that can use `sudo`; otherwise they run without it.
+
+??? note "About the `make` command"
+
+    `make` is a host-side convenience tool. It is not part of Docker and it is not provided by the application container.
+
+    On Ubuntu or Debian, install it with:
+
+    ```bash
+    sudo apt update
+    sudo apt install make
+    ```
+
+    If `make` is not available on your system, you can still run the equivalent `docker compose ...` commands manually.
 
 ## 2. Clone the repository
 
 ```bash
-git clone --recursive git@github.com:LewisResearchGroup/ProteomicsQC.git ProteomicsQC
+git clone git@github.com:LewisResearchGroup/ProteomicsQC.git ProteomicsQC
 cd ProteomicsQC
 ```
-
-This repository uses git submodules, so `--recursive` is required.
 
 ## 3. Generate the configuration
 
@@ -29,11 +40,11 @@ This repository uses git submodules, so `--recursive` is required.
 
 This creates `.env` and the local data directories under `./data/`.
 
-For a normal local installation, you usually do not need to change anything yet. The generated defaults are enough to continue with `make init`.
+For a normal local installation, you usually do not need to change anything yet. The generated defaults are enough to continue with the installation.
 
 Only review `.env` now if you already know you need a different hostname, storage location, or email setup.
 
-!!! note "Default local configuration"
+??? note "Default local configuration in `.env`"
 
     The generated file includes local-safe defaults such as:
 
@@ -98,12 +109,22 @@ make init
 
 `make init` performs the full first-run setup:
 
-- builds the Docker images
+- uses the published container [image](https://github.com/lewisresearchgroup/ProteomicsQC/pkgs/container/proteomicsqc)
 - creates and applies Django migrations
 - prompts you to create a superuser
 - runs `collectstatic`
 
 This is the command to use on a clean installation.
+
+??? note "What to do when the published image is unavailable"
+
+    If the published image is unavailable in your environment, use the local-build fallback instead:
+
+    ```bash
+    make init-local
+    ```
+
+    `make init-local` performs the same first-run setup, but builds the application locally using `docker-compose-develop.yml` before running migrations and initialization commands.
 
 ## 5. Start the application
 

@@ -55,6 +55,10 @@ UID=$(id -u):$(id -g)
 echo "## SECURITY KEYS" >> .env
 echo "SECRET_KEY=$( openssl rand -hex 32 )" >> .env
 
+# keep generated data writable by the host user, even if the script is run via sudo
+OWNER_UID="${SUDO_UID:-$(id -u)}"
+OWNER_GID="${SUDO_GID:-$(id -g)}"
+
 # this prevents permission issues
 mkdir -p data/{compute,datalake,db,media,static}
-chown -R "$USER":"$USER" data
+chown -R "$OWNER_UID":"$OWNER_GID" data

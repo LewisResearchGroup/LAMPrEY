@@ -11,9 +11,9 @@ More information can be found in the [Documentation](https://LewisResearchGroup.
 
 ## Installation
 
-This repository contains git submodules and should be cloned with:
+Clone the repository with:
 
-    git clone --recursive git@github.com:LewisResearchGroup/ProteomicsQC.git
+    git clone git@github.com:LewisResearchGroup/ProteomicsQC.git
 
 After cloning the repository, generate the configuration:
 
@@ -87,6 +87,11 @@ If you use your own domain to serve ProteomicsQC, you need to add it to the `ALL
 You can start the server with the following commands:
 
     make init  # first-time setup: build, migrate, createsuperuser, collectstatic
+
+`make init` uses the published container image from GHCR. If that image is not
+available in your environment, use the local-build fallback instead:
+
+    make init-local  # first-time setup using docker-compose-develop.yml and a local build
 
     make devel  # starts a development server on port 8000
     

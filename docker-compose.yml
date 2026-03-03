@@ -1,5 +1,3 @@
-version: "3.3"
-   
 services:
   web:
     container_name: proteomicsqc_web
@@ -65,4 +63,3 @@ services:
       - db
       - redis
       - web
-
