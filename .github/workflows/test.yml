@@ -13,6 +13,14 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Verify LFS assets
+      run: |
+        git lfs ls-files
+        file app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip
+        unzip -tq app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip >/dev/null
 
     - name: Run pytest via Docker Compose
       env:
