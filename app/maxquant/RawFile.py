@@ -215,3 +215,20 @@ def delete_rawfile(sender, instance, *args, **kwargs):
     raw_file = instance
     if raw_file.path.is_file():
         os.remove(raw_file.path)
+
+    def _prune_empty_dirs(start_dir, stop_dir):
+        current = P(start_dir)
+        stop = P(stop_dir)
+        while current != stop and current.is_dir():
+            try:
+                current.rmdir()
+            except OSError:
+                break
+            current = current.parent
+
+    # Remove empty namespaced/legacy input folders left behind after deleting
+    # the raw file itself (e.g. .../inputs/u1_rf7_<name>/).
+    input_root = raw_file.pipeline.input_path
+    for candidate in {raw_file.path.parent, raw_file._legacy_path.parent}:
+        if candidate != input_root:
+            _prune_empty_dirs(candidate, input_root)

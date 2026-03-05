@@ -1,6 +1,7 @@
 services:
   web:
     container_name: proteomicsqc_web
+    init: true
     restart: always
     user: ${UID}
     platform: linux/amd64
@@ -43,6 +44,7 @@ services:
 
   celery:
     container_name: proteomicsqc_celery
+    init: true
     restart: always
     user: ${UID}
     platform: linux/amd64

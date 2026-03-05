@@ -1,6 +1,7 @@
 services:
   web:
     container_name: proteomicsqc_web
+    init: true
     user: ${UID}
     build:
       context: .
@@ -47,6 +48,7 @@ services:
 
   celery:
     container_name: proteomicsqc_celery
+    init: true
     #restart: no
     user: ${UID}
     build:

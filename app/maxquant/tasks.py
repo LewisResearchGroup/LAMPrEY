@@ -125,6 +125,21 @@ def _terminate_process_group(proc, grace_seconds=5):
         logging.warning("Failed to SIGKILL process group for pid=%s: %s", pgid, exc)
 
 
+def _reap_process(proc, timeout_seconds=2.0):
+    if proc is None:
+        return
+    try:
+        proc.wait(timeout=max(0.1, float(timeout_seconds)))
+    except subprocess.TimeoutExpired:
+        # Keep non-blocking behavior for worker threads; we'll try once more.
+        try:
+            proc.poll()
+        except Exception:
+            return
+    except Exception:
+        return
+
+
 def _run_cancelable_shell_command(cmd, kind, result_id=None):
     poll_seconds = max(0.2, _safe_float("CANCEL_POLL_SECONDS", 2.0))
     kill_grace_seconds = _safe_int("CANCEL_KILL_GRACE_SECONDS", 5)
@@ -153,6 +168,9 @@ def _run_cancelable_shell_command(cmd, kind, result_id=None):
                 proc.pid,
             )
             _terminate_process_group(proc, grace_seconds=kill_grace_seconds)
+            # Ensure the direct child process is reaped so canceled runs do not
+            # leave zombie entries behind in long-lived celery workers.
+            _reap_process(proc)
             return -1
 
         time.sleep(poll_seconds)
