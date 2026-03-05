@@ -1,6 +1,13 @@
 #!/bin/bash
 
-echo '# OMICS PIPELINES CONFIG' > .env
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_ROOT/.env"
+DATA_DIR="$PROJECT_ROOT/data"
+
+echo '# OMICS PIPELINES CONFIG' > "$ENV_FILE"
 
 echo """
 ## HOMEPAGE SETTINGS
@@ -9,7 +16,7 @@ HOSTNAME=localhost
 ALLOWED_HOSTS=localhost
 CSRF_TRUSTED_ORIGINS=http://localhost
 OMICS_URL=http://localhost:8000
-""" >> .env
+""" >> "$ENV_FILE"
 
 echo """## STORAGE
 DATALAKE=./data/datalake
@@ -17,7 +24,7 @@ COMPUTE=./data/compute
 MEDIA=./data/media
 STATIC=./data/static
 DB=./data/db
-""" >> .env
+""" >> "$ENV_FILE"
 
 echo """## EMAIL SETTINGS
 EMAIL_HOST=smtp.gmail.com
@@ -27,7 +34,7 @@ EMAIL_PORT=587
 EMAIL_HOST_USER=''
 EMAIL_HOST_PASSWORD=''
 DEFAULT_FROM_EMAIL=''
-""" >> .env
+""" >> "$ENV_FILE"
 
 echo """## CELERY
 CONCURRENCY=8
@@ -44,21 +51,22 @@ RESULT_STATUS_DONE_MTIME_SKEW_SECONDS=300
 RESULT_STATUS_MAXQUANT_STALE_SECONDS=21600
 RESULT_STATUS_RAWTOOLS_STALE_SECONDS=3600
 RESULT_STATUS_ACTIVITY_FALLBACK_SECONDS=300
+RESULT_STATUS_CANCEL_ACTIVITY_SECONDS=20
 RESULT_STATUS_INSPECT_MAX_VISIBLE_RUNS=25
 RESULT_STATUS_INSPECT_MAX_ACTIVE_RUNS=12
-""" >> .env
+""" >> "$ENV_FILE"
 
 echo """##USERID
 UID=$(id -u):$(id -g)
-""">> .env
+""">> "$ENV_FILE"
 
-echo "## SECURITY KEYS" >> .env
-echo "SECRET_KEY=$( openssl rand -hex 32 )" >> .env
+echo "## SECURITY KEYS" >> "$ENV_FILE"
+echo "SECRET_KEY=$( openssl rand -hex 32 )" >> "$ENV_FILE"
 
 # keep generated data writable by the host user, even if the script is run via sudo
 OWNER_UID="${SUDO_UID:-$(id -u)}"
 OWNER_GID="${SUDO_GID:-$(id -g)}"
 
 # this prevents permission issues
-mkdir -p data/{compute,datalake,db,media,static}
-chown -R "$OWNER_UID":"$OWNER_GID" data
+mkdir -p "$DATA_DIR"/{compute,datalake,db,media,static}
+chown -R "$OWNER_UID":"$OWNER_GID" "$DATA_DIR"
