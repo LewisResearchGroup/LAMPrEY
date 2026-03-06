@@ -235,6 +235,8 @@ def callbacks(app):
                     )
 
                 metric_label = METRIC_LABELS.get(selected_metric, selected_metric)
+                y_max = float(pd.to_numeric(long_df["value"], errors="coerce").max() or 0.0)
+                y_upper = 1.0 if y_max <= 0 else y_max * 1.03
                 long_df["x_pos"] = range(1, len(long_df) + 1)
                 sample_tick_df = (
                     long_df.groupby(["run_idx", "sample_label"], as_index=False)["x_pos"]
@@ -270,9 +272,9 @@ def callbacks(app):
                 fig.update_layout(
                     hovermode="closest",
                     hoverlabel_namelength=-1,
-                    height=475,
+                    height=495,
                     showlegend=False,
-                    margin=dict(l=32, r=20, b=60, t=24, pad=0),
+                    margin=dict(l=32, r=20, b=40, t=24, pad=0),
                     font=C.figure_font,
                     plot_bgcolor="#fbfdff",
                     paper_bgcolor="#f7fbfe",
@@ -291,14 +293,18 @@ def callbacks(app):
                     tickangle=-90,
                     title_standoff=20,
                 )
+                # Keep synthetic index axes anchored at 1 to avoid negative
+                # autorange padding ticks on the left side.
+                if len(long_df) > 0:
+                    fig.update_xaxes(range=[0.5, float(len(long_df)) + 0.5])
                 fig.update_yaxes(
                     title_text=y_axis_title,
                     showgrid=False,
                     zeroline=False,
                     showline=True,
                     linecolor="#cddbe6",
-                    rangemode="tozero",
-                    title_standoff=16,
+                    range=[0, y_upper],
+                    title_standoff=30,
                 )
                 config = T.gen_figure_config(filename="QC-trends", editable=False)
                 graph_style = {**GRAPH_STYLE, "display": "block"}
@@ -312,6 +318,8 @@ def callbacks(app):
             )
         # Keep all samples visible by imputing missing points as zero.
         y_series = pd.to_numeric(df[selected_metric], errors="coerce").fillna(0)
+        y_max = float(y_series.max() or 0.0)
+        y_upper = 1.0 if y_max <= 0 else y_max * 1.03
         metric_label = METRIC_LABELS.get(selected_metric, selected_metric)
         x_axis_label = X_AXIS_LABELS.get(x, x)
 
@@ -345,7 +353,7 @@ def callbacks(app):
         fig.update_layout(
             hovermode="closest",
             hoverlabel_namelength=-1,
-            height=475,
+            height=485,
             showlegend=False,
             margin=dict(l=32, r=20, b=60, t=24, pad=0),
             font=C.figure_font,
@@ -367,14 +375,20 @@ def callbacks(app):
             linecolor="#cddbe6",
         )
         if x == "Index":
-            fig.update_xaxes(dtick=1, tickformat="d")
+            index_max = int(pd.to_numeric(df["Index"], errors="coerce").max() or 0)
+            fig.update_xaxes(
+                dtick=1,
+                tick0=1,
+                tickformat="d",
+                range=[0.5, float(max(1, index_max)) + 0.5],
+            )
         fig.update_yaxes(
             title_text=metric_label,
             showgrid=False,
             zeroline=False,
             showline=True,
             linecolor="#cddbe6",
-            rangemode="tozero",
+            range=[0, y_upper],
         )
 
         config = T.gen_figure_config(filename="QC-trends", editable=False)

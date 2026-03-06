@@ -184,7 +184,10 @@ layout = html.Div(
                                         html.Div(
                                             className="pqc-kpi-card",
                                             children=[
-                                                html.Div("Median Peptides", className="pqc-kpi-label"),
+                                                html.Div(
+                                                    ["Median", html.Br(), "Peptides"],
+                                                    className="pqc-kpi-label",
+                                                ),
                                                 html.Div("--", id="kpi-median-peptides", className="pqc-kpi-value"),
                                             ],
                                         ),
