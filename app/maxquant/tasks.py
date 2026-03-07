@@ -13,6 +13,12 @@ from omics.proteomics.rawtools.quality_control import (
     rawtools_qc_cmd,
 )
 
+PROCESS_TRACKING_FIELDS = {
+    "maxquant": ("maxquant_pid", "maxquant_pgid"),
+    "rawtools_metrics": ("rawtools_metrics_pid", "rawtools_metrics_pgid"),
+    "rawtools_qc": ("rawtools_qc_pid", "rawtools_qc_pgid"),
+}
+
 
 def _safe_float(env_name, default):
     try:
@@ -125,6 +131,56 @@ def _terminate_process_group(proc, grace_seconds=5):
         logging.warning("Failed to SIGKILL process group for pid=%s: %s", pgid, exc)
 
 
+def _set_running_process(result_id, tracking_key, proc):
+    if not result_id or not tracking_key or proc is None:
+        return
+    fields = PROCESS_TRACKING_FIELDS.get(tracking_key)
+    if fields is None:
+        return
+    pid_field, pgid_field = fields
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        pgid = None
+    except OSError as exc:
+        logging.warning(
+            "[%s] Failed to resolve pgid for pid=%s: %s",
+            tracking_key,
+            proc.pid,
+            exc,
+        )
+        pgid = None
+
+    Result = apps.get_model("maxquant", "Result")
+    Result.objects.filter(pk=result_id).update(
+        **{
+            pid_field: proc.pid,
+            pgid_field: pgid,
+        }
+    )
+
+
+def _clear_running_process(result_id, tracking_key, pid=None, pgid=None):
+    if not result_id or not tracking_key:
+        return
+    fields = PROCESS_TRACKING_FIELDS.get(tracking_key)
+    if fields is None:
+        return
+    pid_field, pgid_field = fields
+    filters = {"pk": result_id}
+    if pid is not None:
+        filters[pid_field] = pid
+    if pgid is not None:
+        filters[pgid_field] = pgid
+    Result = apps.get_model("maxquant", "Result")
+    Result.objects.filter(**filters).update(
+        **{
+            pid_field: None,
+            pgid_field: None,
+        }
+    )
+
+
 def _reap_process(proc, timeout_seconds=2.0):
     if proc is None:
         return
@@ -140,7 +196,7 @@ def _reap_process(proc, timeout_seconds=2.0):
         return
 
 
-def _run_cancelable_shell_command(cmd, kind, result_id=None):
+def _run_cancelable_shell_command(cmd, kind, result_id=None, tracking_key=None):
     poll_seconds = max(0.2, _safe_float("CANCEL_POLL_SECONDS", 2.0))
     kill_grace_seconds = _safe_int("CANCEL_KILL_GRACE_SECONDS", 5)
     try:
@@ -154,26 +210,44 @@ def _run_cancelable_shell_command(cmd, kind, result_id=None):
         logging.exception("[%s] Failed to start command: %s", kind, exc)
         return 1
 
-    logging.info("[%s] started pid=%s", kind, proc.pid)
-    while True:
-        rc = proc.poll()
-        if rc is not None:
-            logging.info("[%s] finished pid=%s rc=%s", kind, proc.pid, rc)
-            return rc
+    pgid = None
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        pass
+    except OSError as exc:
+        logging.warning("[%s] Failed to read process group for pid=%s: %s", kind, proc.pid, exc)
 
-        if _is_canceled_result(result_id):
-            logging.info(
-                "[%s] cancel requested during execution; terminating pid=%s",
-                kind,
-                proc.pid,
-            )
-            _terminate_process_group(proc, grace_seconds=kill_grace_seconds)
-            # Ensure the direct child process is reaped so canceled runs do not
-            # leave zombie entries behind in long-lived celery workers.
-            _reap_process(proc)
-            return -1
+    _set_running_process(result_id, tracking_key, proc)
+    logging.info("[%s] started pid=%s pgid=%s", kind, proc.pid, pgid)
+    try:
+        while True:
+            rc = proc.poll()
+            if rc is not None:
+                logging.info("[%s] finished pid=%s rc=%s", kind, proc.pid, rc)
+                return rc
 
-        time.sleep(poll_seconds)
+            if _is_canceled_result(result_id):
+                logging.info(
+                    "[%s] cancel requested during execution; terminating pid=%s pgid=%s",
+                    kind,
+                    proc.pid,
+                    pgid,
+                )
+                _terminate_process_group(proc, grace_seconds=kill_grace_seconds)
+                # Ensure the direct child process is reaped so canceled runs do not
+                # leave zombie entries behind in long-lived celery workers.
+                _reap_process(proc)
+                return -1
+
+            time.sleep(poll_seconds)
+    finally:
+        _clear_running_process(
+            result_id=result_id,
+            tracking_key=tracking_key,
+            pid=proc.pid,
+            pgid=pgid,
+        )
 
 
 @shared_task(bind=True, max_retries=None)
@@ -202,7 +276,10 @@ def rawtools_metrics(
         logging.info(f"[rawtools_metrics] {cmd}")
         print(f"[rawtools_metrics] {cmd}")
         _run_cancelable_shell_command(
-            cmd, kind="rawtools_metrics", result_id=result_id
+            cmd,
+            kind="rawtools_metrics",
+            result_id=result_id,
+            tracking_key="rawtools_metrics",
         )
 
 
@@ -226,7 +303,12 @@ def rawtools_qc(self, input_dir, output_dir, rerun=False, result_id=None):
             return
         logging.info(f"[rawtools_qc] {cmd}")
         print(f"[rawtools_qc] {cmd}")
-        _run_cancelable_shell_command(cmd, kind="rawtools_qc", result_id=result_id)
+        _run_cancelable_shell_command(
+            cmd,
+            kind="rawtools_qc",
+            result_id=result_id,
+            tracking_key="rawtools_qc",
+        )
 
 
 @shared_task(bind=True, max_retries=None)
@@ -253,4 +335,9 @@ def run_maxquant(self, raw_file, params, rerun=False, result_id=None):
     cmd = mq.run(raw_file, rerun=rerun, run=False)
     if cmd is None:
         return
-    _run_cancelable_shell_command(cmd, kind="run_maxquant", result_id=result_id)
+    _run_cancelable_shell_command(
+        cmd,
+        kind="run_maxquant",
+        result_id=result_id,
+        tracking_key="maxquant",
+    )

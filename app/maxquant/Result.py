@@ -2,7 +2,6 @@ import os
 import re
 import shutil
 import zipfile
-import subprocess
 import signal
 import pandas as pd
 import logging
@@ -45,6 +44,12 @@ def get_time_of_file_modification(fn):
 
 
 class Result(models.Model):
+    PROCESS_TRACKING_FIELDS = {
+        "maxquant": ("maxquant_pid", "maxquant_pgid"),
+        "rawtools_metrics": ("rawtools_metrics_pid", "rawtools_metrics_pgid"),
+        "rawtools_qc": ("rawtools_qc_pid", "rawtools_qc_pgid"),
+    }
+
     class Meta:
         verbose_name = _("Result")
         verbose_name_plural = _("Results")
@@ -62,6 +67,12 @@ class Result(models.Model):
     rawtools_metrics_task_submitted_at = models.DateTimeField(null=True, blank=True)
     rawtools_qc_task_submitted_at = models.DateTimeField(null=True, blank=True)
     cancel_requested_at = models.DateTimeField(null=True, blank=True)
+    maxquant_pid = models.BigIntegerField(null=True, blank=True)
+    maxquant_pgid = models.BigIntegerField(null=True, blank=True)
+    rawtools_metrics_pid = models.BigIntegerField(null=True, blank=True)
+    rawtools_metrics_pgid = models.BigIntegerField(null=True, blank=True)
+    rawtools_qc_pid = models.BigIntegerField(null=True, blank=True)
+    rawtools_qc_pgid = models.BigIntegerField(null=True, blank=True)
 
     @property
     def pipeline(self):
@@ -202,11 +213,15 @@ class Result(models.Model):
             self.maxquant_task_id = async_result.id
             self.maxquant_task_submitted_at = timezone.now()
             self.cancel_requested_at = None
+            tracking_updates = self._process_tracking_updates("maxquant")
+            for field, value in tracking_updates.items():
+                setattr(self, field, value)
             self.save(
                 update_fields=[
                     "maxquant_task_id",
                     "maxquant_task_submitted_at",
                     "cancel_requested_at",
+                    *tracking_updates.keys(),
                 ]
             )
             logging.info("Submitted MaxQuant.")
@@ -232,11 +247,15 @@ class Result(models.Model):
             self.rawtools_qc_task_id = async_result.id
             self.rawtools_qc_task_submitted_at = timezone.now()
             self.cancel_requested_at = None
+            tracking_updates = self._process_tracking_updates("rawtools_qc")
+            for field, value in tracking_updates.items():
+                setattr(self, field, value)
             self.save(
                 update_fields=[
                     "rawtools_qc_task_id",
                     "rawtools_qc_task_submitted_at",
                     "cancel_requested_at",
+                    *tracking_updates.keys(),
                 ]
             )
             logging.info("Submitted RawTools QC.")
@@ -254,11 +273,15 @@ class Result(models.Model):
             self.rawtools_metrics_task_id = async_result.id
             self.rawtools_metrics_task_submitted_at = timezone.now()
             self.cancel_requested_at = None
+            tracking_updates = self._process_tracking_updates("rawtools_metrics")
+            for field, value in tracking_updates.items():
+                setattr(self, field, value)
             self.save(
                 update_fields=[
                     "rawtools_metrics_task_id",
                     "rawtools_metrics_task_submitted_at",
                     "cancel_requested_at",
+                    *tracking_updates.keys(),
                 ]
             )
             logging.info("Submitted RawTools metrics.")
@@ -1120,6 +1143,14 @@ class Result(models.Model):
             self.rawtools_qc_task_id,
         ]
 
+    def _process_tracking_updates(self, *stages):
+        updates = {}
+        for stage in stages:
+            pid_field, pgid_field = self.PROCESS_TRACKING_FIELDS[stage]
+            updates[pid_field] = None
+            updates[pgid_field] = None
+        return updates
+
     def cancel_active_jobs(self):
         # Mark cancel first so running tasks can cooperatively stop themselves.
         # This avoids relying on hard worker termination, which can leave child
@@ -1142,10 +1173,10 @@ class Result(models.Model):
                     exc,
                 )
 
-        killed = self._kill_local_processes_for_run()
+        killed = self._kill_tracked_process_groups()
         if killed > 0:
             logging.info(
-                "Killed %s local process(es) for result %s (%s).",
+                "Killed %s tracked process group(s) for result %s (%s).",
                 killed,
                 self.pk,
                 self.basename,
@@ -1165,92 +1196,81 @@ class Result(models.Model):
             self.__dict__.pop(key, None)
         return revoked
 
-    def _kill_local_processes_for_run(self):
-        # Celery revoke(terminate=True) can leave child mono/sh processes alive.
-        # As a fallback, terminate processes whose command line references this run.
-        raw_name = self.raw_file.name
-        raw_stem = P(raw_name).stem
-        patterns = [
-            self.basename,
-            raw_name,
-            raw_stem,
-            str(self.raw_fn),
-            str(self.raw_fn.parent),
-            str(self.output_dir_maxquant),
-            str(self.output_dir_rawtools),
-            str(self.output_dir_rawtools_qc),
-        ]
+    def _kill_tracked_process_groups(self):
         killed = 0
-        matched_pids = set()
+        killed_pgids = set()
+        updates = {}
 
-        def _pids_for_pattern(pattern):
-            if not pattern:
-                return []
-            try:
-                proc = subprocess.run(
-                    ["pgrep", "-f", pattern],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            except FileNotFoundError:
-                return []
-            if proc.returncode not in (0, 1):
-                return []
-            pids = []
-            for line in (proc.stdout or "").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    pid = int(line)
-                except ValueError:
-                    continue
-                if pid != os.getpid():
-                    pids.append(pid)
-            return pids
-
-        for pattern in patterns:
-            if not pattern:
+        for stage, (pid_field, pgid_field) in self.PROCESS_TRACKING_FIELDS.items():
+            pgid = getattr(self, pgid_field)
+            pid = getattr(self, pid_field)
+            if not pgid and not pid:
                 continue
-            for pid in _pids_for_pattern(pattern):
-                matched_pids.add(pid)
-            for pkill_signal in ("TERM", "KILL"):
-                try:
-                    proc = subprocess.run(
-                        ["pkill", f"-{pkill_signal}", "-f", pattern],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                except FileNotFoundError:
-                    logging.warning("pkill command not found; skipping process cleanup.")
-                    return killed
-                # pkill return code:
-                # 0 => matched and signaled, 1 => no processes matched, >1 => error.
-                if proc.returncode == 0:
-                    killed += 1
-                elif proc.returncode > 1:
-                    logging.warning(
-                        "pkill -%s -f %s failed (rc=%s): %s",
-                        pkill_signal,
-                        pattern,
-                        proc.returncode,
-                        (proc.stderr or "").strip(),
-                    )
 
-        # Explicit PID fallback in case pkill misses descendants.
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            for pid in sorted(matched_pids):
+            target_pgid = pgid
+            if target_pgid is None and pid is not None:
                 try:
-                    os.kill(pid, sig)
-                    killed += 1
+                    target_pgid = os.getpgid(pid)
                 except ProcessLookupError:
-                    continue
+                    target_pgid = None
+                except OSError as exc:
+                    logging.warning(
+                        "Could not resolve process group for result %s stage %s pid=%s: %s",
+                        self.pk,
+                        stage,
+                        pid,
+                        exc,
+                    )
+                    target_pgid = None
+
+            updates.update({pid_field: None, pgid_field: None})
+
+            if target_pgid is None or target_pgid in killed_pgids:
+                continue
+
+            try:
+                os.killpg(target_pgid, 0)
+            except ProcessLookupError:
+                killed_pgids.add(target_pgid)
+                continue
+            except PermissionError:
+                logging.warning(
+                    "Permission denied probing process group %s for result %s stage %s.",
+                    target_pgid,
+                    self.pk,
+                    stage,
+                )
+                continue
+
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(target_pgid, sig)
+                except ProcessLookupError:
+                    break
                 except PermissionError:
-                    continue
-                except OSError:
-                    continue
+                    logging.warning(
+                        "Permission denied signaling process group %s for result %s stage %s.",
+                        target_pgid,
+                        self.pk,
+                        stage,
+                    )
+                    break
+                except OSError as exc:
+                    logging.warning(
+                        "Failed signaling process group %s for result %s stage %s: %s",
+                        target_pgid,
+                        self.pk,
+                        stage,
+                        exc,
+                    )
+                    break
+            killed_pgids.add(target_pgid)
+            killed += 1
+
+        if updates:
+            for field, value in updates.items():
+                setattr(self, field, value)
+            self.save(update_fields=list(updates))
         return killed
 
 
