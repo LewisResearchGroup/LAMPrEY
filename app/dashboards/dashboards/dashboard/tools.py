@@ -27,7 +27,9 @@ from api.views import (
     _is_admin,
     _pipelines_for_user,
     _projects_for_user,
+    _raw_file_matches_selection,
     _results_for_pipeline_mutation,
+    _selected_raw_file_ids_and_names,
     get_protein_groups_data,
     get_protein_quant_fn,
     get_qc_data as api_get_qc_data,
@@ -54,7 +56,13 @@ def list_to_dropdown_options(values):
     return [{"label": v, "value": v} for v in values]
 
 
-def table_from_dataframe(df, id="table", row_deletable=True, row_selectable="multi"):
+def table_from_dataframe(
+    df,
+    id="table",
+    row_deletable=True,
+    row_selectable="multi",
+    hidden_columns=None,
+):
     return dt.DataTable(
         id=id,
         columns=[
@@ -74,6 +82,7 @@ def table_from_dataframe(df, id="table", row_deletable=True, row_selectable="mul
         export_format="csv",
         export_headers="display",
         merge_duplicate_headers=True,
+        hidden_columns=list(hidden_columns or []),
         style_cell={"font_size": "10px", "padding-left": "5em", "padding-right": "5em"},
     )
 
@@ -243,9 +252,17 @@ def set_rawfile_action(project, pipeline, raw_files, action, user=None):
         if pipeline_obj is None:
             return {"status": "Missing permissions"}
         results = _results_for_pipeline_mutation(user, pipeline_obj)
-        raw_file_set = {str(P(i).name) for i in list(raw_files or [])}
+        selected_ids, selected_names = _selected_raw_file_ids_and_names(
+            {"run_keys": list(raw_files or [])}
+        )
+        if not selected_ids and raw_files:
+            selected_ids, selected_names = _selected_raw_file_ids_and_names(
+                {"raw_files": list(raw_files or [])}
+            )
         for result in results:
-            if result.raw_file.name not in raw_file_set:
+            if not _raw_file_matches_selection(
+                result.raw_file, selected_ids, selected_names
+            ):
                 continue
             if action == "flag":
                 result.raw_file.flagged = True

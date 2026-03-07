@@ -363,6 +363,79 @@ def get_instance_from_uuid(model, uuid):
     return model.objects.get(uuid=uuid)
 
 
+def _request_list(data, key):
+    if data is None:
+        return []
+    if hasattr(data, "getlist"):
+        return list(data.getlist(key))
+    value = data.get(key)
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _normalize_selected_raw_name(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in {"none", "nan"}:
+        return None
+    return P(text).stem.lower()
+
+
+def _parse_selected_raw_file_ids(values):
+    selected_ids = set()
+    for value in values or []:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered.startswith("rf") and lowered[2:].isdigit():
+            selected_ids.add(int(lowered[2:]))
+            continue
+        if text.isdigit():
+            selected_ids.add(int(text))
+    return selected_ids
+
+
+def _selected_raw_file_ids_and_names(data):
+    selected_ids = _parse_selected_raw_file_ids(_request_list(data, "run_keys"))
+    selected_ids.update(_parse_selected_raw_file_ids(_request_list(data, "raw_file_ids")))
+    legacy_names = {
+        normalized
+        for normalized in (
+            _normalize_selected_raw_name(value)
+            for value in _request_list(data, "raw_files")
+        )
+        if normalized
+    }
+    return selected_ids, legacy_names
+
+
+def _raw_file_matches_selection(raw_file, selected_ids, selected_names):
+    if raw_file.pk in selected_ids:
+        return True
+    if not selected_names:
+        return False
+    normalized_candidates = {
+        normalized
+        for normalized in (
+            _normalize_selected_raw_name(raw_file.name),
+            _normalize_selected_raw_name(raw_file.logical_name),
+            _normalize_selected_raw_name(raw_file.display_ref),
+        )
+        if normalized
+    }
+    return not normalized_candidates.isdisjoint(selected_names)
+
+
 def get_protein_quant_fn(
     project_slug,
     pipeline_slug,
@@ -772,7 +845,7 @@ class CreateFlag(generics.ListAPIView):
 
         project_slug = data["project"]
         pipeline_slug = data["pipeline"]
-        raw_files = request.POST.getlist("raw_files")
+        selected_ids, selected_names = _selected_raw_file_ids_and_names(request.data)
 
         project = _projects_for_user(user).filter(slug=project_slug).first()
         if project is None or not (
@@ -790,10 +863,13 @@ class CreateFlag(generics.ListAPIView):
             return JsonResponse({"status": "Missing permissions"}, status=403)
         results = _results_for_pipeline_mutation(user, pipeline)
         for result in results:
-            if result.raw_file.name in raw_files:
-                logging.warning(f"Flag {result.raw_file.name} in {pipeline.name}")
-                result.raw_file.flagged = True
-                result.raw_file.save()
+            if not _raw_file_matches_selection(
+                result.raw_file, selected_ids, selected_names
+            ):
+                continue
+            logging.warning(f"Flag {result.raw_file.name} in {pipeline.name}")
+            result.raw_file.flagged = True
+            result.raw_file.save(update_fields=["flagged"])
 
         return JsonResponse({})
 
@@ -809,7 +885,7 @@ class DeleteFlag(generics.ListAPIView):
 
         project_slug = data["project"]
         pipeline_slug = data["pipeline"]
-        raw_files = request.POST.getlist("raw_files")
+        selected_ids, selected_names = _selected_raw_file_ids_and_names(request.data)
 
         project = _projects_for_user(user).filter(slug=project_slug).first()
         if project is None or not (
@@ -827,10 +903,13 @@ class DeleteFlag(generics.ListAPIView):
             return JsonResponse({"status": "Missing permissions"}, status=403)
         results = _results_for_pipeline_mutation(user, pipeline)
         for result in results:
-            if result.raw_file.name in raw_files:
-                logging.warning(f"Un-flag {result.raw_file.name} in {pipeline.name}")
-                result.raw_file.flagged = False
-                result.raw_file.save()
+            if not _raw_file_matches_selection(
+                result.raw_file, selected_ids, selected_names
+            ):
+                continue
+            logging.warning(f"Un-flag {result.raw_file.name} in {pipeline.name}")
+            result.raw_file.flagged = False
+            result.raw_file.save(update_fields=["flagged"])
 
         return JsonResponse({})
 
@@ -858,7 +937,7 @@ class RawFile(generics.ListAPIView):
             )
             return JsonResponse({"status": "Missing permissions"}, status=403)
 
-        raw_files = request.POST.getlist("raw_files")
+        selected_ids, selected_names = _selected_raw_file_ids_and_names(request.data)
 
         pipeline = _pipelines_for_user(user).filter(
             project__slug=project_slug, slug=pipeline_slug
@@ -867,16 +946,22 @@ class RawFile(generics.ListAPIView):
             return JsonResponse({"status": "Missing permissions"}, status=403)
         results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
         for result in results:
-            if result.raw_file.name in raw_files:
-                logging.warning(f"{result.raw_file.name}: {action}")
-                if action == "flag":
-                    result.raw_file.flagged = True
-                elif action == "unflag":
-                    result.raw_file.flagged = False
-                elif action == "accept":
-                    result.raw_file.use_downstream = True
-                elif action == "reject":
-                    result.raw_file.use_downstream = False
-                result.raw_file.save()
+            if not _raw_file_matches_selection(
+                result.raw_file, selected_ids, selected_names
+            ):
+                continue
+            logging.warning(f"{result.raw_file.name}: {action}")
+            if action == "flag":
+                result.raw_file.flagged = True
+                result.raw_file.save(update_fields=["flagged"])
+            elif action == "unflag":
+                result.raw_file.flagged = False
+                result.raw_file.save(update_fields=["flagged"])
+            elif action == "accept":
+                result.raw_file.use_downstream = True
+                result.raw_file.save(update_fields=["use_downstream"])
+            elif action == "reject":
+                result.raw_file.use_downstream = False
+                result.raw_file.save(update_fields=["use_downstream"])
 
         return JsonResponse({"status": "success"})

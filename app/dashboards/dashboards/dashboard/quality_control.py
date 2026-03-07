@@ -121,6 +121,13 @@ layout = html.Div(
 
 
 def callbacks(app):
+    def _sample_label_series(df):
+        if "SampleLabel" in df.columns:
+            return df["SampleLabel"].astype(str)
+        if "RawFile" in df.columns:
+            return df["RawFile"].astype(str)
+        return df.index.astype(str)
+
     @app.callback(
         Output("qc-figure", "figure"),
         Output("qc-figure", "config"),
@@ -328,19 +335,21 @@ def callbacks(app):
             if "RawFile" in df.columns
             else df.index.astype(str)
         )
+        sample_labels = _sample_label_series(df)
         acquired = df["DateAcquired"].astype(str).replace("NaT", "N/A")
+        x_values = sample_labels if x == "RawFile" else df[x]
         fig = go.Figure(
             data=[
                 go.Scatter(
-                    x=df[x],
+                    x=x_values,
                     y=y_series,
                     name=metric_label,
                     mode="lines+markers",
                     line=dict(width=3, color="#1f6f8b", shape="linear"),
                     marker=dict(size=8, color="#1f6f8b", line=dict(width=1, color="#ffffff")),
                     customdata=df.index.to_list(),
-                    hovertext=raw_labels + "<br>" + acquired,
-                    text=None if x == "RawFile" else raw_labels,
+                    hovertext=sample_labels + "<br>" + acquired,
+                    text=None if x == "RawFile" else sample_labels,
                     hovertemplate=(
                         "<b>%{hovertext}</b><br>"
                         + f"{metric_label}: "

@@ -49,6 +49,27 @@ def _detected_tmt_qc_columns(columns):
     )
 
 
+def _with_sample_labels(df):
+    if df is None or df.empty or "RawFile" not in df.columns:
+        return df
+
+    df = df.copy()
+    raw_names = df["RawFile"].fillna("").astype(str).str.strip()
+    duplicate_counts = raw_names[raw_names != ""].value_counts()
+
+    labels = []
+    for row_idx, row in df.iterrows():
+        raw_name = str(row.get("RawFile") or "").strip() or f"Sample {row_idx + 1}"
+        run_key = str(row.get("RunKey") or "").strip()
+        if duplicate_counts.get(raw_name, 0) > 1 and run_key:
+            labels.append(f"{raw_name} [{run_key}]")
+        else:
+            labels.append(raw_name)
+
+    df["SampleLabel"] = labels
+    return df
+
+
 if __name__ == "__main__":
     app = dash.Dash(
         __name__,
@@ -492,6 +513,7 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
     if "DateAcquired" in df.columns:
         df["DateAcquired"] = pd.to_datetime(df["DateAcquired"], errors="coerce")
     df = df.replace("not detected", np.nan)
+    df = _with_sample_labels(df)
 
     uploader_options = [{"label": "All users", "value": "__all__"}]
     seen_uploader_values = {"__all__"}
@@ -591,14 +613,23 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
         df = df[df["Uploader"].astype(str) == str(uploader_filter)].reset_index(drop=True)
 
     df_display = df[available_cols] if len(available_cols) > 0 else pd.DataFrame(index=df.index)
+    hidden_columns = [col for col in ["RunKey", "SampleLabel"] if col in df.columns]
+    for col in hidden_columns:
+        if col not in df_display.columns:
+            df_display[col] = df[col]
 
-    records = df_display.to_dict("records")
+    records = df.to_dict("records")
     if not is_admin_session:
         uploader_options = [{"label": "All users", "value": "__all__"}]
     show_scope_user = bool(is_admin_session)
     scope_style = {"display": "block"} if show_scope_user else {"display": "none"}
     return (
-        T.table_from_dataframe(df_display, id="qc-table", row_selectable="multi"),
+        T.table_from_dataframe(
+            df_display,
+            id="qc-table",
+            row_selectable="multi",
+            hidden_columns=hidden_columns,
+        ),
         records,
         uploader_options,
         scope_style,
@@ -844,11 +875,14 @@ def update_selected_raw_files(
 
     data = data.iloc[selection]
 
-    raw_files = data.RawFile.values
+    if "RunKey" in data.columns:
+        selected_runs = data.RunKey.astype(str).tolist()
+    else:
+        selected_runs = data.RawFile.astype(str).tolist()
 
-    raw_files = [P(i).with_suffix(".raw") for i in raw_files]
-
-    response = T.set_rawfile_action(project, pipeline, raw_files, action, user=user)
+    response = T.set_rawfile_action(
+        project, pipeline, selected_runs, action, user=user
+    )
 
     if response["status"] == "success":
         return dbc.Alert("Success", color="success")

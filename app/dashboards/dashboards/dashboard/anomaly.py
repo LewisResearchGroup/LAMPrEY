@@ -238,10 +238,12 @@ def callbacks(app):
         qc_data = pd.DataFrame(scope_data or [])
         if qc_data.empty or "RawFile" not in qc_data.columns:
             return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key
-        sample_count = qc_data["RawFile"].dropna().astype(str).nunique()
+        scope_rows = qc_data.copy()
+        sample_count = len(qc_data.index)
         if sample_count < min_samples_for_anomaly:
             return None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key
-        qc_data = qc_data.set_index("RawFile")
+        index_col = "RunKey" if "RunKey" in qc_data.columns else "RawFile"
+        qc_data = qc_data.set_index(index_col)
 
         # Replace column fully None → True
         if "Use Downstream" not in qc_data.columns:
@@ -262,13 +264,24 @@ def callbacks(app):
             return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key
 
         # Update flags in backend
-        currently_unflagged = list(qc_data[~qc_data.Flagged].reset_index().RawFile)
-        currently_flagged   = list(qc_data[qc_data.Flagged].reset_index().RawFile)
-        files_to_flag   = [i for i in predictions[predictions.Anomaly == 1].index if i in currently_unflagged]
-        files_to_unflag = [i for i in predictions[predictions.Anomaly == 0].index if i in currently_flagged]
+        currently_unflagged = set(qc_data[~qc_data.Flagged].index.astype(str))
+        currently_flagged = set(qc_data[qc_data.Flagged].index.astype(str))
+        files_to_flag = [
+            str(i) for i in predictions[predictions.Anomaly == 1].index if str(i) in currently_unflagged
+        ]
+        files_to_unflag = [
+            str(i) for i in predictions[predictions.Anomaly == 0].index if str(i) in currently_flagged
+        ]
 
-        T.set_rawfile_action(project, pipeline, files_to_flag, "flag", user=user)
-        T.set_rawfile_action(project, pipeline, files_to_unflag, "unflag", user=user)
+        if index_col == "RunKey":
+            run_keys_to_flag = files_to_flag
+            run_keys_to_unflag = files_to_unflag
+        else:
+            run_keys_to_flag = files_to_flag
+            run_keys_to_unflag = files_to_unflag
+
+        T.set_rawfile_action(project, pipeline, run_keys_to_flag, "flag", user=user)
+        T.set_rawfile_action(project, pipeline, run_keys_to_unflag, "unflag", user=user)
 
         payload = (
             df_shap.to_json(orient="split")
@@ -318,7 +331,7 @@ def callbacks(app):
             return {}, config, hidden_graph_style, default_empty_message, {"display": "flex"}
         if "RawFile" not in qc_data.columns:
             return {}, config, hidden_graph_style, default_empty_message, {"display": "flex"}
-        sample_count = qc_data["RawFile"].dropna().astype(str).nunique()
+        sample_count = len(qc_data.index)
         if sample_count < min_samples_for_anomaly:
             return (
                 {},
@@ -338,8 +351,20 @@ def callbacks(app):
             df_shap = pd.read_json(shapley_values)
 
         # samples on rows, QC metrics on columns
-        fns = qc_data["RawFile"].astype(str)
-        df_shap = df_shap.reindex(fns).fillna(0)
+        row_keys = (
+            qc_data["RunKey"].astype(str)
+            if "RunKey" in qc_data.columns
+            else qc_data["RawFile"].astype(str)
+        )
+        row_labels = (
+            qc_data["SampleLabel"].astype(str)
+            if "SampleLabel" in qc_data.columns
+            else qc_data["RawFile"].astype(str)
+        )
+        label_by_key = dict(zip(row_keys, row_labels))
+        df_shap.index = df_shap.index.astype(str)
+        df_shap = df_shap.reindex(row_keys).fillna(0)
+        df_shap.index = [label_by_key.get(key, key) for key in row_keys]
 
         if row_order == "anomalous_first":
             sample_rank = df_shap.abs().mean(axis=1).sort_values(ascending=False).index

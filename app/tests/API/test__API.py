@@ -2,6 +2,7 @@ from django.test import TestCase
 from datetime import date
 from unittest.mock import patch
 from types import SimpleNamespace
+from uuid import uuid4
 from project.models import Project
 from maxquant.models import Pipeline
 
@@ -216,6 +217,88 @@ class ApiTestCase(TestCase):
         }, content_type="application/json")
 
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    def test__rawfile_action_uses_run_key_for_uuid_prefixed_uppercase_upload(self):
+        prefixed_raw = RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("CaseStudy.RAW", b"..."),
+            created_by=self.user,
+        )
+        RawFile.objects.filter(pk=prefixed_raw.pk).update(
+            orig_file=f"upload/{uuid4().hex}_CaseStudy.RAW"
+        )
+        prefixed_raw.refresh_from_db()
+
+        c = Client()
+        c.force_login(self.user)
+
+        response = c.post(
+            f"{URL}/api/rawfile",
+            {
+                "project": self.project.slug,
+                "pipeline": self.pipeline.slug,
+                "action": "accept",
+                "run_keys": [prefixed_raw.display_ref],
+            },
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        prefixed_raw.refresh_from_db()
+        assert prefixed_raw.use_downstream is True
+
+        response = c.post(
+            f"{URL}/api/rawfile",
+            {
+                "project": self.project.slug,
+                "pipeline": self.pipeline.slug,
+                "action": "reject",
+                "run_keys": [prefixed_raw.display_ref],
+            },
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        prefixed_raw.refresh_from_db()
+        assert prefixed_raw.use_downstream is False
+
+    def test__create_and_delete_flag_use_run_key_for_uuid_prefixed_uppercase_upload(self):
+        prefixed_raw = RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("FlagMe.RAW", b"..."),
+            created_by=self.user,
+        )
+        RawFile.objects.filter(pk=prefixed_raw.pk).update(
+            orig_file=f"upload/{uuid4().hex}_FlagMe.RAW"
+        )
+        prefixed_raw.refresh_from_db()
+
+        c = Client()
+        c.force_login(self.user)
+
+        response = c.post(
+            f"{URL}/api/flag/create",
+            {
+                "project": self.project.slug,
+                "pipeline": self.pipeline.slug,
+                "run_keys": [prefixed_raw.display_ref],
+            },
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        prefixed_raw.refresh_from_db()
+        assert prefixed_raw.flagged is True
+
+        response = c.post(
+            f"{URL}/api/flag/delete",
+            {
+                "project": self.project.slug,
+                "pipeline": self.pipeline.slug,
+                "run_keys": [prefixed_raw.display_ref],
+            },
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        prefixed_raw.refresh_from_db()
+        assert prefixed_raw.flagged is False
 
     @patch("maxquant.Result.rawtools_qc.delay", return_value=SimpleNamespace(id="qc-task"))
     @patch(
