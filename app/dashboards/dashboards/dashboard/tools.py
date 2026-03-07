@@ -3,6 +3,7 @@ import sys
 import json
 import logging
 import numbers
+import csv
 from pathlib import Path as P
 
 # from xml.etree.ElementPath import _SelectorContext
@@ -37,6 +38,7 @@ from api.views import (
     remove,
 )
 from maxquant.models import RawFile as RawFileModel
+from maxquant.models import Result as ResultModel
 from maxquant.serializers import PipelineSerializer
 from project.serializers import ProjectsNamesSerializer
 
@@ -232,21 +234,189 @@ def get_protein_groups(
             user=user,
             raw_files=raw_files,
         )
-        if len(fns) == 0:
-            return dashboard_no_data({})
         columns = list(columns)
-        if "Reporter intensity corrected" in columns:
-            df = pd.read_parquet(fns[0])
-            intensity_columns = df.filter(regex="Reporter intensity corrected").columns.to_list()
-            columns.remove("Reporter intensity corrected")
-            columns = columns + intensity_columns
-        df = get_protein_groups_data(fns, columns=columns, protein_names=protein_names)
+        if len(fns) == 0:
+            df = _protein_group_frame_from_results(
+                project,
+                pipeline,
+                data_range=data_range,
+                raw_files=raw_files,
+                user=user,
+            )
+            if df.empty:
+                return dashboard_no_data({})
+            selected_cols = _expand_reporter_intensity_columns(df, columns)
+            if not selected_cols:
+                return dashboard_no_data({})
+            protein_col = "Majority protein IDs"
+            if protein_col not in df.columns or "RawFile" not in df.columns:
+                return dashboard_no_data({})
+            df = df[df[protein_col].isin(protein_names)][["RawFile", protein_col] + selected_cols]
+        else:
+            if "Reporter intensity corrected" in columns:
+                df = pd.read_parquet(fns[0])
+                intensity_columns = df.filter(regex="Reporter intensity corrected").columns.to_list()
+                columns.remove("Reporter intensity corrected")
+                columns = columns + intensity_columns
+            df = get_protein_groups_data(fns, columns=columns, protein_names=protein_names)
     except Exception as e:
         logging.error(f"Protein groups request error: {e}")
         return _dashboard_error_from_exception(e, "Protein groups request error")
     if df is None or df.empty:
         return dashboard_no_data({})
     return dashboard_ok(_dataframe_json_payload(df))
+
+
+def _normalize_selected_raw_name(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in {"none", "nan"}:
+        return None
+    return P(text).stem.lower()
+
+
+def _result_matches_raw_file_selection(result, requested_raws):
+    if not requested_raws:
+        return True
+    candidates = {
+        normalized
+        for normalized in (
+            _normalize_selected_raw_name(result.raw_file.name),
+            _normalize_selected_raw_name(result.raw_file.logical_name),
+            _normalize_selected_raw_name(result.raw_file.display_ref),
+        )
+        if normalized
+    }
+    return not candidates.isdisjoint(requested_raws)
+
+
+def _iter_selected_results(project, pipeline, data_range=None, raw_files=None, user=None):
+    pipeline_obj = _pipelines_for_user(user).filter(
+        project__slug=project,
+        slug=pipeline,
+    ).first()
+    if pipeline_obj is None:
+        return []
+
+    results = list(
+        ResultModel.objects.select_related(
+            "raw_file",
+            "raw_file__pipeline",
+            "raw_file__pipeline__project",
+        )
+        .filter(raw_file__pipeline=pipeline_obj)
+        .order_by("raw_file__created", "pk")
+    )
+    if raw_files is not None:
+        requested_raws = {
+            normalized
+            for normalized in (_normalize_selected_raw_name(raw) for raw in raw_files)
+            if normalized
+        }
+        results = [
+            result for result in results if _result_matches_raw_file_selection(result, requested_raws)
+        ]
+    if data_range is not None and len(results) > data_range:
+        results = results[-data_range:]
+    return results
+
+
+def _detect_separator(fn, default="\t"):
+    try:
+        with open(fn, "r", encoding="utf-8", errors="ignore", newline="") as handle:
+            sample = handle.read(8192)
+    except OSError:
+        return default
+    if not sample:
+        return default
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters="\t,;")
+        return dialect.delimiter
+    except csv.Error:
+        header = sample.splitlines()[0] if sample.splitlines() else sample
+        if header.count(",") > header.count("\t"):
+            return ","
+        if header.count(";") > header.count("\t"):
+            return ";"
+        return default
+
+
+def _read_protein_groups_text(result):
+    fn = result.output_dir_maxquant / "proteinGroups.txt"
+    if not fn.is_file():
+        return pd.DataFrame()
+    sep = _detect_separator(fn)
+    try:
+        df = pd.read_csv(fn, sep=sep, low_memory=False, na_filter=False)
+    except Exception as exc:
+        logging.warning("Could not read proteinGroups.txt for result %s: %s", result.pk, exc)
+        return pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame()
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+    df["RawFile"] = P(result.raw_file.logical_name).with_suffix("").name
+    df["Project"] = str(result.raw_file.pipeline.project.name)
+    df["Pipeline"] = str(result.raw_file.pipeline.name)
+    df["UseDownstream"] = str(result.raw_file.use_downstream)
+    df["Flagged"] = str(result.raw_file.flagged)
+    return df
+
+
+def _protein_group_frame_from_results(project, pipeline, data_range=None, raw_files=None, user=None):
+    frames = []
+    for result in _iter_selected_results(
+        project,
+        pipeline,
+        data_range=data_range,
+        raw_files=raw_files,
+        user=user,
+    ):
+        df = _read_protein_groups_text(result)
+        if df is None or df.empty:
+            continue
+        frames.append(df.loc[:, ~df.columns.duplicated()].copy())
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _expand_reporter_intensity_columns(df, columns):
+    columns = list(columns or [])
+    expanded = []
+    for col in columns:
+        if col == "Reporter intensity corrected":
+            expanded.extend(
+                candidate
+                for candidate in df.columns
+                if isinstance(candidate, str)
+                and candidate.startswith("Reporter intensity corrected ")
+            )
+        else:
+            expanded.append(col)
+    seen = set()
+    available = []
+    for col in expanded:
+        if col in df.columns and col not in seen:
+            available.append(col)
+            seen.add(col)
+    return available
+
+
+def _remove_protein_group_rows(df, remove_contaminants=True, remove_reversed_sequences=True):
+    if df is None or df.empty or "Majority protein IDs" not in df.columns:
+        return df
+    cleaned = df.copy()
+    ids = cleaned["Majority protein IDs"].fillna("").astype(str)
+    if remove_contaminants:
+        cleaned = cleaned.loc[~ids.str.contains("CON__", na=False)]
+        ids = cleaned["Majority protein IDs"].fillna("").astype(str)
+    if remove_reversed_sequences:
+        cleaned = cleaned.loc[~ids.str.contains("REV__", na=False)]
+    return cleaned
 
 
 def get_protein_names(
@@ -269,21 +439,58 @@ def get_protein_names(
             raw_files=raw_files,
         )
         if len(fns) == 0:
-            return dashboard_no_data({})
-        cols = ["Majority protein IDs", "Fasta headers", "Score", "Intensity"]
-        ddf = dd.read_parquet(fns, engine="pyarrow")[cols]
-        if remove_contaminants:
-            ddf = remove(ddf, "contaminants")
-        if remove_reversed_sequences:
-            ddf = remove(ddf, "reversed_sequences")
-        dff = (
-            ddf.groupby(["Majority protein IDs", "Fasta headers"])
-            .mean()
-            .sort_values("Score")
-            .reset_index()
-            .rename(columns={"Majority protein IDs": "protein_names"})
-        )
-        res = dff.compute()
+            df = _protein_group_frame_from_results(
+                project,
+                pipeline,
+                data_range=data_range,
+                raw_files=raw_files,
+                user=user,
+            )
+            if df.empty:
+                return dashboard_no_data({})
+            df = _remove_protein_group_rows(
+                df,
+                remove_contaminants=remove_contaminants,
+                remove_reversed_sequences=remove_reversed_sequences,
+            )
+            rename_map = {"Majority protein IDs": "protein_names"}
+            group_cols = ["Majority protein IDs", "Fasta headers"]
+            numeric_cols = [col for col in ("Score", "Intensity") if col in df.columns]
+            if not all(col in df.columns for col in group_cols):
+                return dashboard_no_data({})
+            if numeric_cols:
+                res = (
+                    df[group_cols + numeric_cols]
+                    .groupby(group_cols, dropna=False)
+                    .mean(numeric_only=True)
+                    .reset_index()
+                    .rename(columns=rename_map)
+                )
+                sort_col = "Score" if "Score" in res.columns else "Intensity"
+                if sort_col in res.columns:
+                    res = res.sort_values(sort_col)
+            else:
+                res = (
+                    df[group_cols]
+                    .drop_duplicates()
+                    .rename(columns=rename_map)
+                    .reset_index(drop=True)
+                )
+        else:
+            cols = ["Majority protein IDs", "Fasta headers", "Score", "Intensity"]
+            ddf = dd.read_parquet(fns, engine="pyarrow")[cols]
+            if remove_contaminants:
+                ddf = remove(ddf, "contaminants")
+            if remove_reversed_sequences:
+                ddf = remove(ddf, "reversed_sequences")
+            dff = (
+                ddf.groupby(["Majority protein IDs", "Fasta headers"])
+                .mean()
+                .sort_values("Score")
+                .reset_index()
+                .rename(columns={"Majority protein IDs": "protein_names"})
+            )
+            res = dff.compute()
         response = {}
         for col in res.columns:
             response[col] = res[col].to_list()
@@ -716,7 +923,18 @@ def detect_anomalies(
         if c in qc_data.columns:
             qc_data[c] = qc_data[c].apply(log2p1)
 
-    df_train = qc_data[qc_data["Use Downstream"].fillna(False)][selected_cols].fillna(0)
+    if "Use Downstream" in qc_data.columns:
+        use_downstream = qc_data["Use Downstream"]
+        if use_downstream.isna().all():
+            train_mask = pd.Series(True, index=qc_data.index)
+        else:
+            train_mask = use_downstream.fillna(False).astype(bool)
+    else:
+        train_mask = pd.Series(True, index=qc_data.index)
+
+    df_train = qc_data.loc[train_mask, selected_cols].fillna(0)
+    if df_train.empty:
+        df_train = qc_data[selected_cols].fillna(0)
     df_all = qc_data[selected_cols].fillna(0)
 
     # Keep anomaly setup from consuming all CPUs by default.

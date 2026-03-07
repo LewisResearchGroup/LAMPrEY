@@ -19,6 +19,7 @@ class BootstrapDemoCommandTestCase(TestCase):
         self.assertTrue(project.users.filter(pk=self.user.pk).exists())
         self.assertEqual(raw_files.count(), 3)
         self.assertEqual(results.count(), 3)
+        self.assertEqual(raw_files.filter(use_downstream=True).count(), 3)
         self.assertTrue(pipeline.mqpar_path.is_file())
         self.assertTrue(pipeline.fasta_path.is_file())
         self.assertTrue(results.first().output_dir_maxquant.is_dir())

@@ -91,14 +91,14 @@ def callbacks(app):
         Input("pipeline", "value"),
         Input("qc-scope-data", "data"),
         State("protein-intensity-proteins", "value"),
-        prevent_initial_call=True,
+        prevent_initial_call="initial_duplicate",
     )
     def update_protein_dropdown(tab, project, pipeline, scope_data, current_values, **kwargs):
         current_values = list(current_values or [])
         if tab != "protein_intensity":
             raise PreventUpdate
         if not project or not pipeline:
-            return [], []
+            return [], [], None
 
         scope_df = pd.DataFrame(T.dashboard_rows(scope_data))
         if scope_df.empty or ("RawFile" not in scope_df.columns):

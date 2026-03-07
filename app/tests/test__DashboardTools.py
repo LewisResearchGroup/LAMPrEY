@@ -21,7 +21,9 @@ from dashboards.dashboards.dashboard.tools import (
     dashboard_result_data,
     dashboard_rows,
     dashboard_scope_error,
+    detect_anomalies,
     get_protein_groups,
+    get_protein_names,
     get_qc_data,
     set_rawfile_action,
 )
@@ -72,6 +74,125 @@ class DashboardToolsTestCase(SimpleTestCase):
 
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error"]["kind"], "file_read")
+
+    @patch("dashboards.dashboards.dashboard.tools._protein_group_frame_from_results")
+    @patch("dashboards.dashboards.dashboard.tools.get_protein_quant_fn", return_value=[])
+    def test__get_protein_names_falls_back_to_protein_groups_text_when_parquet_missing(
+        self,
+        _mock_get_fns,
+        mock_from_results,
+    ):
+        mock_from_results.return_value = pd.DataFrame(
+            [
+                {
+                    "Majority protein IDs": "P1",
+                    "Fasta headers": "Protein 1",
+                    "Intensity": 42.0,
+                    "RawFile": "demo_01",
+                },
+                {
+                    "Majority protein IDs": "CON__P2",
+                    "Fasta headers": "Contaminant",
+                    "Intensity": 5.0,
+                    "RawFile": "demo_02",
+                },
+            ]
+        )
+
+        result = get_protein_names("proj", "pipe", raw_files=["demo_01"], user=object())
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["data"]["protein_names"], ["P1"])
+
+    @patch("dashboards.dashboards.dashboard.tools._protein_group_frame_from_results")
+    @patch("dashboards.dashboards.dashboard.tools.get_protein_quant_fn", return_value=[])
+    def test__get_protein_groups_falls_back_to_protein_groups_text_when_parquet_missing(
+        self,
+        _mock_get_fns,
+        mock_from_results,
+    ):
+        mock_from_results.return_value = pd.DataFrame(
+            [
+                {
+                    "Majority protein IDs": "P1",
+                    "RawFile": "demo_01",
+                    "Reporter intensity corrected 1": 100.0,
+                    "Reporter intensity corrected 2": 110.0,
+                },
+                {
+                    "Majority protein IDs": "P2",
+                    "RawFile": "demo_02",
+                    "Reporter intensity corrected 1": 50.0,
+                    "Reporter intensity corrected 2": 55.0,
+                },
+            ]
+        )
+
+        result = get_protein_groups(
+            "proj",
+            "pipe",
+            protein_names=["P1"],
+            columns=["Reporter intensity corrected"],
+            raw_files=["demo_01"],
+            user=object(),
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["data"]["Majority protein IDs"]["0"], "P1")
+
+    @patch("dashboards.dashboards.dashboard.tools.ShapAnalysis")
+    @patch("dashboards.dashboards.dashboard.tools.predict_model")
+    @patch("dashboards.dashboards.dashboard.tools.get_config")
+    @patch("dashboards.dashboards.dashboard.tools.create_model")
+    @patch("dashboards.dashboards.dashboard.tools.setup")
+    def test__detect_anomalies_uses_all_rows_when_use_downstream_is_unknown(
+        self,
+        mock_setup,
+        mock_create_model,
+        mock_get_config,
+        mock_predict_model,
+        mock_shap_analysis,
+    ):
+        class _Pipeline:
+            def transform(self, df):
+                return df.copy()
+
+        qc_data = pd.DataFrame(
+            {
+                "Use Downstream": [None, None, None],
+                "MetricA": [1.0, 2.0, 3.0],
+                "MetricB": [4.0, 5.0, 6.0],
+            },
+            index=["rf1", "rf2", "rf3"],
+        )
+        mock_create_model.return_value = object()
+        mock_get_config.return_value = _Pipeline()
+        mock_predict_model.return_value = pd.DataFrame(
+            {
+                "Anomaly": [0, 1, 0],
+                "Anomaly_Score": [0.1, 0.9, 0.2],
+            },
+            index=qc_data.index,
+        )
+        mock_shap_analysis.return_value.df_shap = pd.DataFrame(
+            {
+                "MetricB": [0.3, 0.2, 0.1],
+                "MetricA": [0.1, 0.4, 0.2],
+            },
+            index=qc_data.index,
+        )
+
+        predictions, shap_values = detect_anomalies(
+            qc_data,
+            algorithm="iforest",
+            columns=["MetricA", "MetricB"],
+            fraction=0.05,
+        )
+
+        df_train = mock_setup.call_args.args[0]
+        self.assertEqual(len(df_train.index), 3)
+        self.assertEqual(predictions["Anomaly"].tolist(), [0, 1, 0])
+        self.assertEqual(list(shap_values.columns), ["MetricB", "MetricA"])
 
     def test__normalize_max_features_caps_integer_values(self):
         assert _normalize_max_features(10, 4) == 4

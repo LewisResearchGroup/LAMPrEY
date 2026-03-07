@@ -295,12 +295,16 @@ def _seed_result_artifacts(result: Result, source_output_dir: Path | None = None
 def _upsert_demo_raw_file(user: User, pipeline: Pipeline, filename: str) -> RawFile:
     for raw_file in RawFile.objects.filter(pipeline=pipeline, created_by=user):
         if raw_file.name == filename:
+            if raw_file.use_downstream is not True:
+                raw_file.use_downstream = True
+                raw_file.save(update_fields=["use_downstream"])
             return raw_file
 
     raw_file = RawFile(
         pipeline=pipeline,
         created_by=user,
         orig_file=SimpleUploadedFile(filename, b"demo raw placeholder"),
+        use_downstream=True,
     )
     raw_file._skip_auto_result = True
     raw_file.save()
