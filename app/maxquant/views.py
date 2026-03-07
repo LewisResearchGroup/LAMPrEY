@@ -1143,25 +1143,33 @@ def queue_existing_run(request, pk):
             },
             status=409,
         )
-    if result.has_active_stage:
-        return JsonResponse(
-            {
-                "is_valid": False,
-                "error": "Run is already queued or running.",
-                "status": result.overall_status,
-                "run": result.name,
-            },
-            status=409,
+    with transaction.atomic():
+        locked_queryset = Result.objects.select_for_update(of=("self",))
+        if not (request.user.is_superuser or request.user.is_staff):
+            locked_queryset = locked_queryset.filter(raw_file__created_by_id=request.user.id)
+        result = get_object_or_404(
+            locked_queryset,
+            pk=pk,
         )
+        if result.requeue_dispatch_active or result.has_active_stage:
+            return JsonResponse(
+                {
+                    "is_valid": False,
+                    "error": "Run is already queued or running.",
+                    "status": result.overall_status,
+                    "run": result.name,
+                },
+                status=409,
+            )
 
-    # Force a full rerun by recreating stage outputs.
-    result.run_maxquant(rerun=True)
-    result.run_rawtools_metrics(rerun=True)
-    result.run_rawtools_qc(rerun=True)
+        attempt = result.begin_requeue_dispatch()
+        transaction.on_commit(
+            lambda: Result.dispatch_requeue_attempt(result.pk, attempt)
+        )
     return JsonResponse(
         {
             "is_valid": True,
-            "status": result.overall_status,
+            "status": "queued",
             "run": result.name,
         }
     )

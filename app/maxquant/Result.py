@@ -67,6 +67,8 @@ class Result(models.Model):
     rawtools_metrics_task_submitted_at = models.DateTimeField(null=True, blank=True)
     rawtools_qc_task_submitted_at = models.DateTimeField(null=True, blank=True)
     cancel_requested_at = models.DateTimeField(null=True, blank=True)
+    requeue_dispatch_started_at = models.DateTimeField(null=True, blank=True)
+    processing_attempt = models.PositiveIntegerField(default=0)
     maxquant_pid = models.BigIntegerField(null=True, blank=True)
     maxquant_pgid = models.BigIntegerField(null=True, blank=True)
     rawtools_metrics_pid = models.BigIntegerField(null=True, blank=True)
@@ -703,6 +705,8 @@ class Result(models.Model):
     def maxquant_status(self):
         if self.is_demo_input:
             return self._demo_maxquant_status()
+        if self.requeue_dispatch_active:
+            return "queued"
         err_fn = self.output_dir_maxquant / "maxquant.err"
         out_fn = self.output_dir_maxquant / "maxquant.out"
         done_fn = self.output_dir_maxquant / "time.txt"
@@ -797,6 +801,8 @@ class Result(models.Model):
     def rawtools_metrics_status(self):
         if self.is_demo_input:
             return self._demo_rawtools_metrics_status()
+        if self.requeue_dispatch_active:
+            return "queued"
         err_fn = self.output_dir_rawtools / "rawtools_metrics.err"
         done_fns = self.rawtools_metrics_expected_files
         started_stale_seconds = int(
@@ -870,6 +876,8 @@ class Result(models.Model):
     def rawtools_qc_status(self):
         if self.is_demo_input:
             return self._demo_rawtools_qc_status()
+        if self.requeue_dispatch_active:
+            return "queued"
         err_fn = self.output_dir_rawtools_qc / "rawtools_qc.err"
         done_fns = self.rawtools_qc_expected_files
         started_stale_seconds = int(
@@ -947,6 +955,8 @@ class Result(models.Model):
     @cached_property
     def overall_status(self):
         statuses = self.stage_statuses.values()
+        if self.requeue_dispatch_active:
+            return "queued"
         # Active stages win precedence so UI/control flow cannot claim terminal
         # failure while any backend worker is still running/queued.
         if any(status == "running" for status in statuses):
@@ -971,6 +981,8 @@ class Result(models.Model):
 
     @cached_property
     def has_active_stage(self):
+        if self.requeue_dispatch_active:
+            return True
         # Don't treat run as active when it has already failed or been canceled;
         # avoids showing "Queued" and auto-refresh when e.g. only a stuck
         # downstream task is PENDING and no process is actually running.
@@ -1143,6 +1155,10 @@ class Result(models.Model):
             self.rawtools_qc_task_id,
         ]
 
+    @property
+    def requeue_dispatch_active(self):
+        return self.requeue_dispatch_started_at is not None
+
     def _process_tracking_updates(self, *stages):
         updates = {}
         for stage in stages:
@@ -1182,7 +1198,44 @@ class Result(models.Model):
                 self.basename,
             )
 
-        # Invalidate status caches so reused instances recompute with cancel state.
+        self._invalidate_status_cache()
+        return revoked
+
+    def begin_requeue_dispatch(self):
+        self.requeue_dispatch_started_at = timezone.now()
+        self.processing_attempt = (self.processing_attempt or 0) + 1
+        self.cancel_requested_at = None
+        self.maxquant_task_id = None
+        self.maxquant_task_submitted_at = None
+        self.rawtools_metrics_task_id = None
+        self.rawtools_metrics_task_submitted_at = None
+        self.rawtools_qc_task_id = None
+        self.rawtools_qc_task_submitted_at = None
+        tracking_updates = self._process_tracking_updates(
+            "maxquant",
+            "rawtools_metrics",
+            "rawtools_qc",
+        )
+        for field, value in tracking_updates.items():
+            setattr(self, field, value)
+        self.save(
+            update_fields=[
+                "requeue_dispatch_started_at",
+                "processing_attempt",
+                "cancel_requested_at",
+                "maxquant_task_id",
+                "maxquant_task_submitted_at",
+                "rawtools_metrics_task_id",
+                "rawtools_metrics_task_submitted_at",
+                "rawtools_qc_task_id",
+                "rawtools_qc_task_submitted_at",
+                *tracking_updates.keys(),
+            ]
+        )
+        self._invalidate_status_cache()
+        return self.processing_attempt
+
+    def _invalidate_status_cache(self):
         for key in (
             "maxquant_status",
             "rawtools_metrics_status",
@@ -1194,7 +1247,21 @@ class Result(models.Model):
             "processing_message",
         ):
             self.__dict__.pop(key, None)
-        return revoked
+
+    @classmethod
+    def dispatch_requeue_attempt(cls, result_id, attempt):
+        result = cls.objects.get(pk=result_id)
+        if result.processing_attempt != attempt:
+            return
+        try:
+            result.run_maxquant(rerun=True)
+            result.run_rawtools_metrics(rerun=True)
+            result.run_rawtools_qc(rerun=True)
+        finally:
+            cls.objects.filter(
+                pk=result_id,
+                processing_attempt=attempt,
+            ).update(requeue_dispatch_started_at=None)
 
     def _kill_tracked_process_groups(self):
         killed = 0
