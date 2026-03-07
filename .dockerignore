@@ -1,5 +1,22 @@
+.git
+.github
+.pytest_cache
+.vscode
 data
 docs
+node_modules
 scripts
 site
-.git
+
+# Large local runtime data that is mounted at runtime and should never be sent
+# as build context.
+app/data
+app/combined
+app/dask-worker-space
+app/logs.log
+
+# Python caches and local test artifacts.
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/*.pyo

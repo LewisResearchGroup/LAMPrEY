@@ -36,10 +36,7 @@ RUN curl -SL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
     && rm /tmp/dotnet-install.sh
 
 # add uv package really fast for installations; fail the image build if runtime deps are missing
-RUN /opt/conda/bin/conda install --override-channels -c conda-forge -c bioconda pip uv
-RUN /opt/conda/bin/conda install --override-channels -c conda-forge -c bioconda rawtools
-RUN /opt/conda/bin/conda install --override-channels -c conda-forge -c bioconda mono
-RUN /opt/conda/bin/conda install --override-channels -c conda-forge -c bioconda maxquant=2.0.3.0
+RUN /opt/conda/bin/conda install --override-channels -c conda-forge -c bioconda pip uv rawtools mono maxquant=2.0.3.0
 
 COPY requirements.txt requirements.txt
 

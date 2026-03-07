@@ -3,6 +3,7 @@ services:
     container_name: proteomicsqc_web
     init: true
     user: ${UID}
+    image: proteomicsqc-local:latest
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile
@@ -51,9 +52,7 @@ services:
     init: true
     #restart: no
     user: ${UID}
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile
+    image: proteomicsqc-local:latest
     command: /opt/conda/bin/celery -A main worker -l info --concurrency ${CONCURRENCY}
     env_file:
       - ./.env
