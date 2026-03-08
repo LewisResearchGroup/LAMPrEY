@@ -7,18 +7,31 @@
       <input id="fileupload" type="file" name="orig_file" multiple
              style="display: none;"
              data-url="{% url 'maxquant:basic_upload' %}"
-             data-form-data='{"csrfmiddlewaretoken": "{{ csrf_token }}", "pipeline": "{{ pipeline.pk }}"}'>
+             data-form-data='{"csrfmiddlewaretoken": "{{ csrf_token }}", "pipeline": "{{ pipeline.pk }}"}'
+             {% if uploads_blocked %}disabled{% endif %}>
 
       <div class="upload-queue" id="upload-queue">
         <div class="upload-queue-cta">
           <div class="upload-queue-cta-text">
             <strong>Add .raw files</strong>
+            {% if uploads_blocked %}
+            <span>This seeded demo pipeline is read-only. Uploads are disabled for demo content.</span>
+            {% else %}
             <span>Drop files here or use the button to add them to the queue.</span>
+            {% endif %}
             <span id="upload-navigation-warning" class="upload-navigation-warning" role="status" aria-live="polite">
+              {% if uploads_blocked %}
+              <strong>Note:</strong> Use a non-demo pipeline to upload and process new raw files.
+              {% else %}
               <strong>Important:</strong> Keep this page open while uploads are running. Reloading or navigating away cancels in-progress uploads.
+              {% endif %}
             </span>
           </div>
-          <button type="button" class="btn run-btn run-btn-primary js-upload-photos upload-queue-add-btn">
+          <button
+            type="button"
+            class="btn run-btn run-btn-primary js-upload-photos upload-queue-add-btn"
+            {% if uploads_blocked %}disabled aria-disabled="true" title="Uploads are disabled for the demo pipeline."{% endif %}
+          >
             upload .raw
           </button>
         </div>
@@ -62,7 +75,7 @@
       </div>
     </div>
 
-    <div style='margin-top: 50px'>
+    <div class="pipeline-runs-section">
       {% include 'proteomics/include/list_mq_runs.html' with maxquant_runs=maxquant_runs %}
     </div>
 

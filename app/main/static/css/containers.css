@@ -28,6 +28,49 @@
   height: 20px;
 }
 
+body.dashboard-page .content-spacer-sm {
+  display: none;
+}
+
+body.dashboard-page #content > .container:first-of-type {
+  display: none;
+}
+
+body.dashboard-page footer {
+  display: none;
+}
+
+body.dashboard-page,
+body.dashboard-page .flex-wrapper,
+body.dashboard-page #content,
+body.dashboard-page .container-fluid,
+body.dashboard-page .dashapp {
+  background: var(--color-bg-page);
+}
+
+body.dashboard-page .flex-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.dashboard-page #content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+body.dashboard-page .container-fluid,
+body.dashboard-page .dashapp {
+  flex: 1 1 auto;
+}
+
+body.dashboard-page .dashapp iframe,
+body.dashboard-page .dashapp > div,
+body.dashboard-page .dashapp .embed-responsive,
+body.dashboard-page .dashapp .embed-responsive-item {
+  min-height: calc(100vh - 130px);
+}
+
 @media (min-width: 1400px) {
   .container {
     max-width: 1360px;

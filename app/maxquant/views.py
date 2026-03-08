@@ -37,6 +37,7 @@ import plotly.graph_objects as go
 from .forms import BasicUploadForm, SearchResult
 from .models import RawFile, Result, Pipeline
 from project.models import Project
+from onboarding.bootstrap import DEMO_PIPELINE_NAME
 
 from omics.common import today
 from omics.proteomics.rawtools.plotly import histograms, lines_plot
@@ -68,6 +69,10 @@ def _results_for_user(user):
     if user.is_staff or user.is_superuser:
         return queryset
     return queryset.filter(raw_file__created_by_id=user.id).distinct()
+
+
+def _pipeline_blocks_uploads(pipeline):
+    return pipeline.name == DEMO_PIPELINE_NAME
 
 
 def _demo_chromatogram_frame(multiplier=1, ms2=False):
@@ -186,6 +191,7 @@ def maxquant_pipeline_view(request, project, pipeline):
     context = dict(
         maxquant_runs=maxquant_runs, project=project, pipeline=pipeline
     )
+    context["uploads_blocked"] = _pipeline_blocks_uploads(pipeline)
     uploader_filters = []
     if is_admin_session:
         uploader_rows = (
@@ -1111,6 +1117,15 @@ class UploadRaw(LoginRequiredMixin, View):
         project = pipeline.project
 
         logging.warning(f"Upload to: {project.name} / {pipeline.name}")
+
+        if _pipeline_blocks_uploads(pipeline):
+            return JsonResponse(
+                {
+                    "is_valid": False,
+                    "error": "Uploads are disabled for the seeded demo pipeline.",
+                },
+                status=409,
+            )
 
         if form.is_valid():
             uploaded_file = form.cleaned_data["orig_file"]

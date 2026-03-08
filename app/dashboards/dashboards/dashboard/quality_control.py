@@ -57,10 +57,14 @@ metric_options = [
 ]
 
 BUTTON_STYLE = {
-    "padding": "8px 14px",
+    "padding": "8px 18px",
     "borderRadius": "8px",
     "fontWeight": 600,
     "fontSize": "14px",
+    "border": "1px solid #a5f3fc",
+    "background": "#ecfeff",
+    "color": "#0891b2",
+    "cursor": "pointer",
 }
 
 layout = html.Div(
@@ -262,10 +266,10 @@ def callbacks(app):
                             showlegend=False,
                             marker=dict(
                                 size=6,
-                                color="#2a809d",
+                                color="#06b6d4",
                                 line=dict(width=0.8, color="#ffffff"),
                             ),
-                            line=dict(width=1.6, color="rgba(42, 128, 157, 0.55)"),
+                            line=dict(width=1.6, color="rgba(6, 182, 212, 0.5)"),
                             text=long_df["x_label"],
                             customdata=long_df["run_idx"],
                             hovertemplate=(
@@ -283,8 +287,8 @@ def callbacks(app):
                     showlegend=False,
                     margin=dict(l=32, r=20, b=40, t=24, pad=0),
                     font=C.figure_font,
-                    plot_bgcolor="#fbfdff",
-                    paper_bgcolor="#f7fbfe",
+                    plot_bgcolor="#ffffff",
+                    paper_bgcolor="#ffffff",
                     yaxis={"automargin": True},
                     xaxis={"automargin": True},
                 )
@@ -296,7 +300,7 @@ def callbacks(app):
                     showgrid=False,
                     zeroline=False,
                     showline=True,
-                    linecolor="#cddbe6",
+                    linecolor="#e2e8ed",
                     tickangle=-90,
                     title_standoff=20,
                 )
@@ -306,10 +310,11 @@ def callbacks(app):
                     fig.update_xaxes(range=[0.5, float(len(long_df)) + 0.5])
                 fig.update_yaxes(
                     title_text=y_axis_title,
-                    showgrid=False,
+                    showgrid=True,
+                    gridcolor="#f1f5f7",
                     zeroline=False,
                     showline=True,
-                    linecolor="#cddbe6",
+                    linecolor="#e2e8ed",
                     range=[0, y_upper],
                     title_standoff=30,
                 )
@@ -345,8 +350,8 @@ def callbacks(app):
                     y=y_series,
                     name=metric_label,
                     mode="lines+markers",
-                    line=dict(width=3, color="#1f6f8b", shape="linear"),
-                    marker=dict(size=8, color="#1f6f8b", line=dict(width=1, color="#ffffff")),
+                    line=dict(width=2.5, color="#06b6d4", shape="linear"),
+                    marker=dict(size=8, color="#06b6d4", line=dict(width=1.5, color="#ffffff")),
                     customdata=df.index.to_list(),
                     hovertext=sample_labels + "<br>" + acquired,
                     text=None if x == "RawFile" else sample_labels,
@@ -366,8 +371,8 @@ def callbacks(app):
             showlegend=False,
             margin=dict(l=32, r=20, b=60, t=24, pad=0),
             font=C.figure_font,
-            plot_bgcolor="#fbfdff",
-            paper_bgcolor="#f7fbfe",
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
             yaxis={"automargin": True},
             xaxis={"automargin": True},
         )
@@ -381,7 +386,7 @@ def callbacks(app):
             showgrid=False,
             zeroline=False,
             showline=True,
-            linecolor="#cddbe6",
+            linecolor="#e2e8ed",
         )
         if x == "Index":
             index_max = int(pd.to_numeric(df["Index"], errors="coerce").max() or 0)
@@ -393,10 +398,11 @@ def callbacks(app):
             )
         fig.update_yaxes(
             title_text=metric_label,
-            showgrid=False,
+            showgrid=True,
+            gridcolor="#f1f5f7",
             zeroline=False,
             showline=True,
-            linecolor="#cddbe6",
+            linecolor="#e2e8ed",
             range=[0, y_upper],
         )
 

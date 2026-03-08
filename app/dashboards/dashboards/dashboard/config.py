@@ -174,7 +174,7 @@ colors = {
 }
 
 figure_font = dict(
-    # family="Courier New, monospace",
-    size=15,
-    color="black",
+    family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    size=13,
+    color="#364a57",
 )

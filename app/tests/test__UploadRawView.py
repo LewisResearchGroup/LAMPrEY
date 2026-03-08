@@ -8,6 +8,7 @@ from user.models import User
 from project.models import Project
 from maxquant.models import Pipeline, RawFile, Result
 from django.db import IntegrityError
+from onboarding.bootstrap import DEMO_PIPELINE_NAME
 
 class UploadRawViewTestCase(TestCase):
     def setUp(self):
@@ -191,3 +192,25 @@ class UploadRawViewTestCase(TestCase):
         data = json.loads(response.content)
         self.assertFalse(data.get("is_valid"))
         self.assertIn("Could not save file", data.get("error", ""))
+
+    def test_upload_raw_post_demo_pipeline_returns_409_and_creates_nothing(self):
+        self.client.force_login(self.user)
+        self.pipeline.name = DEMO_PIPELINE_NAME
+        self.pipeline.save(update_fields=["name"])
+
+        url = reverse("maxquant:basic_upload")
+        response = self.client.post(
+            url,
+            {
+                "pipeline": self.pipeline.pk,
+                "project": self.project.pk,
+                "orig_file": SimpleUploadedFile("blocked.raw", b"dummy raw data"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 409)
+        data = json.loads(response.content)
+        self.assertFalse(data.get("is_valid"))
+        self.assertIn("disabled", data.get("error", "").lower())
+        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 0)
+        self.assertEqual(Result.objects.count(), 0)

@@ -1,21 +1,29 @@
 /*
  * Scope: typography primitives and shared design tokens.
+ * Uses Inter – the standard Flowbite / Tailwind typeface.
  * Do not place component geometry, page spacing systems, or utility overrides here.
  */
 
-@import "https://fonts.googleapis.com/css?family=Poppins:300,400,500,600,700";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 body {
-  font-family: 'Dongle', sans-serif;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+               'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background: var(--color-bg-page);
   margin-bottom: 0;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  color: var(--color-text-strong);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 h1 {
-  font-size: 30px;
+  font-size: 28px;
   color: var(--color-brand-ink);
-  font-weight: bold;
+  font-weight: 700;
+  line-height: 1.2;
 }

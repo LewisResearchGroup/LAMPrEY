@@ -330,10 +330,10 @@ def callbacks(app):
                         showlegend=False,
                         marker=dict(
                             size=8,
-                            color="#2a809d",
-                            line=dict(width=0.8, color="#ffffff"),
+                            color="#06b6d4",
+                            line=dict(width=1, color="#ffffff"),
                         ),
-                        line=dict(width=2, color="rgba(42, 128, 157, 0.55)"),
+                        line=dict(width=2, color="rgba(6, 182, 212, 0.5)"),
                         text=single["x_label"],
                         customdata=np.stack(
                             [
@@ -411,8 +411,8 @@ def callbacks(app):
             height=chart_height,
             margin=dict(l=32, r=20, b=50, t=20, pad=0),
             font=C.figure_font,
-            plot_bgcolor="#fbfdff",
-            paper_bgcolor="#f7fbfe",
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
             yaxis={"automargin": True},
             xaxis={"automargin": True},
             showlegend=False,
@@ -422,7 +422,7 @@ def callbacks(app):
             showgrid=False,
             zeroline=False,
             showline=True,
-            linecolor="#cddbe6",
+            linecolor="#e2e8ed",
         )
         if len(proteins) == 1:
             fig.update_xaxes(
@@ -438,10 +438,11 @@ def callbacks(app):
             fig.update_yaxes(range=[-0.35, y_max + 0.8])
         fig.update_yaxes(
             title_text="Log2Intensity",
-            showgrid=False,
+            showgrid=True,
+            gridcolor="#f1f5f7",
             zeroline=False,
             showline=True,
-            linecolor="#cddbe6",
+            linecolor="#e2e8ed",
             rangemode="tozero",
             title_standoff=16,
         )

@@ -90,7 +90,10 @@ else:
         "dashboard",
         add_bootstrap_links=True,
         suppress_callback_exceptions=True,
-        external_stylesheets=["/static/css/dashboard.css"],
+        external_stylesheets=[
+            "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap",
+            "/static/css/dashboard.css",
+        ],
     )
 
 timeout = 360
@@ -98,14 +101,15 @@ timeout = 360
 
 protein_table_default_cols = []
 BUTTON_STYLE = {
-    "padding": "6px 16px",
-    "backgroundColor": "#e9f3fe",
-    "color": "#2994ff",
-    "border": "1px solid #2994ff",
-    "borderRadius": "1px",
+    "padding": "8px 18px",
+    "backgroundColor": "#ecfeff",
+    "color": "#0891b2",
+    "border": "1px solid #a5f3fc",
+    "borderRadius": "8px",
     "cursor": "pointer",
-    "fontWeight": 500,
+    "fontWeight": 600,
     "fontSize": "14px",
+    "transition": "all 150ms ease",
 }
 
 layout = html.Div(
@@ -129,7 +133,6 @@ layout = html.Div(
                                 html.Div(
                                     className="pqc-panel-header",
                                     children=[
-                                        html.Div("Run Snapshot", className="pqc-panel-kicker"),
                                         html.H3("Key Metrics", className="pqc-panel-title"),
                                         html.Div(
                                             "0 samples in current selection",
@@ -186,7 +189,7 @@ layout = html.Div(
                                     className="pqc-kpi-grid",
                                     children=[
                                         html.Div(
-                                            className="pqc-kpi-card pqc-kpi-primary",
+                                            className="pqc-kpi-card pqc-kpi-primary pqc-kpi-samples-card",
                                             children=[
                                                 html.Div("Samples", className="pqc-kpi-label"),
                                                 html.Div("0", id="kpi-samples", className="pqc-kpi-value"),

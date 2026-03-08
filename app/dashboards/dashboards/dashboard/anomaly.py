@@ -512,8 +512,8 @@ def callbacks(app):
                 thickness=14,
                 len=0.76,
             ),
-            plot_bgcolor="#f7fbfe",
-            paper_bgcolor="#f7fbfe",
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
         )
 
         # X label rotation

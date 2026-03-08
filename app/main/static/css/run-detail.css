@@ -79,6 +79,17 @@
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
 }
 
+.btn.run-btn:disabled,
+.btn.run-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  background: linear-gradient(135deg, #dbe7ed 0%, #c7d6de 100%) !important;
+  border-color: #bfd0da !important;
+  color: #6f8290 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
 .run-actions {
   margin-top: 10px;
 }

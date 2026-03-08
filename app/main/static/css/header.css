@@ -4,25 +4,25 @@
  */
 
 #title {
-  color: rgb(240, 240, 240);
-  font-size: 30px;
-  font-weight: bold;
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 700;
   text-align: left;
-  padding: 15px;
+  padding: 12px 16px;
 }
 
 .app-header {
   background: linear-gradient(135deg, var(--color-brand-soft) 0%, var(--color-brand-strong) 100%);
-  color: #fff;
+  color: #ffffff;
   width: 100%;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 4px 12px rgba(59, 143, 163, 0.2);
 }
 
 .app-header-inner {
   max-width: 100%;
   margin: 0 auto;
-  padding: 10px 22px;
+  padding: 10px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -33,10 +33,10 @@
   margin: 0;
   padding: 0;
   color: #ffffff;
-  font-size: 36px;
-  line-height: 1.05;
+  font-size: 32px;
+  line-height: 1.1;
   font-weight: 800;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 
 .app-title-link {
@@ -45,31 +45,33 @@
 }
 
 .app-title-link:hover {
-  color: #ecfeff;
+  color: var(--color-mint-accent-soft);
   text-decoration: none;
 }
 
+/* User menu pill */
 .app-user {
   min-height: 38px;
-  padding: 7px 12px;
+  padding: 7px 14px;
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(235, 252, 255, 0.4);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(218, 243, 248, 0.2) 100%);
-  color: #f4feff;
-  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-weight: 600;
   font-size: 14px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   justify-content: flex-start;
-  box-shadow: 0 2px 8px rgba(12, 52, 72, 0.16);
-  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .app-user:hover {
-  border-color: rgba(255, 255, 255, 0.65);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(227, 247, 252, 0.26) 100%);
-  box-shadow: 0 5px 14px rgba(12, 52, 72, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .app-user-icon {
@@ -79,7 +81,7 @@
   width: 18px;
   height: 18px;
   font-size: 16px;
-  opacity: 0.95;
+  opacity: 0.9;
 }
 
 .app-user-name {
@@ -101,7 +103,7 @@
 
 .app-user-menu summary:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(205, 244, 252, 0.5);
+  box-shadow: 0 0 0 3px var(--color-mint-accent-shadow);
 }
 
 .app-user-menu summary::-webkit-details-marker {
@@ -110,14 +112,16 @@
 
 .app-user-caret {
   font-size: 12px;
-  opacity: 0.9;
+  opacity: 0.85;
   margin-left: 2px;
+  transition: transform 150ms ease;
 }
 
 .app-user-menu[open] .app-user-caret {
   transform: rotate(180deg);
 }
 
+/* Dropdown panel */
 .app-user-dropdown {
   position: absolute;
   top: calc(100% + 8px);
@@ -126,8 +130,8 @@
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: 0 14px 28px rgba(8, 38, 44, 0.22);
-  padding: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.06);
+  padding: 6px;
   z-index: 40;
 }
 
@@ -135,16 +139,17 @@
   width: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 9px 12px;
   border-radius: var(--radius-md);
   color: var(--color-text-strong);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
   border: none;
   background: transparent;
   text-align: left;
+  transition: background 150ms ease, color 150ms ease;
 }
 
 .app-user-item:hover {
@@ -162,13 +167,13 @@
 }
 
 .app-user-item-logout:hover {
-  background: #fde6e7;
-  color: #7a1823;
+  background: var(--color-danger-bg-soft);
+  color: #7f1d1d;
 }
 
 #username {
   font-weight: inherit;
-  padding: 7px 12px;
+  padding: 7px 14px;
 }
 
 @media (max-width: 900px) {
@@ -179,6 +184,6 @@
   }
 
   .app-title {
-    font-size: 30px;
+    font-size: 26px;
   }
 }
