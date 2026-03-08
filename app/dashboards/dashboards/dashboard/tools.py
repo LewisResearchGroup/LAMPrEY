@@ -31,6 +31,7 @@ from api.views import (
     _projects_for_user,
     _raw_file_matches_selection,
     _results_for_pipeline_mutation,
+    _results_for_user,
     _selected_raw_file_ids_and_names,
     get_protein_groups_data,
     get_protein_quant_fn,
@@ -38,7 +39,6 @@ from api.views import (
     remove,
 )
 from maxquant.models import RawFile as RawFileModel
-from maxquant.models import Result as ResultModel
 from maxquant.serializers import PipelineSerializer
 from project.serializers import ProjectsNamesSerializer
 
@@ -303,11 +303,7 @@ def _iter_selected_results(project, pipeline, data_range=None, raw_files=None, u
         return []
 
     results = list(
-        ResultModel.objects.select_related(
-            "raw_file",
-            "raw_file__pipeline",
-            "raw_file__pipeline__project",
-        )
+        _results_for_user(user)
         .filter(raw_file__pipeline=pipeline_obj)
         .order_by("raw_file__created", "pk")
     )

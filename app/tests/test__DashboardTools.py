@@ -18,6 +18,7 @@ from dashboards.dashboards.dashboard.index import (
 )
 from dashboards.dashboards.dashboard.tools import (
     _normalize_max_features,
+    _iter_selected_results,
     dashboard_result_data,
     dashboard_rows,
     dashboard_scope_error,
@@ -139,6 +140,42 @@ class DashboardToolsTestCase(SimpleTestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["data"]["Majority protein IDs"]["0"], "P1")
+
+    @patch("dashboards.dashboards.dashboard.tools._results_for_user")
+    @patch("dashboards.dashboards.dashboard.tools._pipelines_for_user")
+    def test__iter_selected_results_uses_owner_scoped_queryset_for_non_admins(
+        self,
+        mock_pipelines_for_user,
+        mock_results_for_user,
+    ):
+        pipeline_obj = object()
+        mock_pipelines_for_user.return_value.filter.return_value.first.return_value = pipeline_obj
+        owner_queryset = mock_results_for_user.return_value
+        owner_queryset.filter.return_value.order_by.return_value = ["owned-result"]
+
+        results = _iter_selected_results("proj", "pipe", user=object())
+
+        self.assertEqual(results, ["owned-result"])
+        mock_results_for_user.assert_called_once()
+        owner_queryset.filter.assert_called_once_with(raw_file__pipeline=pipeline_obj)
+
+    @patch("dashboards.dashboards.dashboard.tools._results_for_user")
+    @patch("dashboards.dashboards.dashboard.tools._pipelines_for_user")
+    def test__iter_selected_results_preserves_admin_access_through_results_helper(
+        self,
+        mock_pipelines_for_user,
+        mock_results_for_user,
+    ):
+        pipeline_obj = object()
+        admin_user = object()
+        mock_pipelines_for_user.return_value.filter.return_value.first.return_value = pipeline_obj
+        admin_queryset = mock_results_for_user.return_value
+        admin_queryset.filter.return_value.order_by.return_value = ["admin-result-a", "admin-result-b"]
+
+        results = _iter_selected_results("proj", "pipe", user=admin_user)
+
+        self.assertEqual(results, ["admin-result-a", "admin-result-b"])
+        mock_results_for_user.assert_called_once_with(admin_user)
 
     @patch("dashboards.dashboards.dashboard.tools.ShapAnalysis")
     @patch("dashboards.dashboards.dashboard.tools.predict_model")
