@@ -270,7 +270,7 @@ def callbacks(app):
         long_df["ChannelNo"] = pd.to_numeric(long_df["Channel"], errors="coerce")
         long_df = long_df[long_df["RawFile"].isin(raw_files)]
         if long_df.empty:
-            return go.Figure(), config, hidden_style, "No intensity records match the selected samples.", {"display": "flex"}
+            return go.Figure(), config, hidden_style, "No intensity records match the selected samples.", {"display": "flex"}, None
 
         axis_df = scope_df[["RawFile", "Index", "DateAcquired"]].copy()
         axis_df["RawFileLabel"] = axis_df["RawFile"]
@@ -281,7 +281,7 @@ def callbacks(app):
             protein_name = proteins[0]
             single = long_df[long_df[protein_col] == protein_name].copy()
             if single.empty:
-                return go.Figure(), config, hidden_style, "The selected protein has no intensity values in this scope.", {"display": "flex"}
+                return go.Figure(), config, hidden_style, "The selected protein has no intensity values in this scope.", {"display": "flex"}, None
 
             single = (
                 single.groupby(
@@ -295,7 +295,7 @@ def callbacks(app):
             single["run_idx"] = single["RawFile"].map(run_order)
             single = single.sort_values(["run_idx", "ChannelNo"], na_position="last").reset_index(drop=True)
             if single.empty:
-                return go.Figure(), config, hidden_style, "The selected protein has no intensity values in this scope.", {"display": "flex"}
+                return go.Figure(), config, hidden_style, "The selected protein has no intensity values in this scope.", {"display": "flex"}, None
 
             axis_mode = x_axis if x_axis in {"Index", "RawFile", "DateAcquired"} else "Index"
 
@@ -356,7 +356,7 @@ def callbacks(app):
         else:
             multi = long_df[long_df[protein_col].isin(proteins)].copy()
             if multi.empty:
-                return go.Figure(), config, hidden_style, "No intensities were found for the selected proteins.", {"display": "flex"}
+                return go.Figure(), config, hidden_style, "No intensities were found for the selected proteins.", {"display": "flex"}, None
 
             fig = go.Figure()
             palette = px.colors.qualitative.Pastel
