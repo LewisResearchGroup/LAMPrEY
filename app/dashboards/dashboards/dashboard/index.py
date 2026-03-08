@@ -227,7 +227,7 @@ layout = html.Div(
                                             className="pqc-kpi-card",
                                             children=[
                                                 html.Div(
-                                                    "Median Missed Cleavages Eq1 [%]",
+                                                    "Median Miss Cleav Eq1 [%]",
                                                     className="pqc-kpi-label",
                                                 ),
                                                 html.Div(

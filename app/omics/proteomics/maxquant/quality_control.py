@@ -32,6 +32,8 @@ summary_columns_v2 = [
     "Mass standard deviation [mDa]"
 ]
 
+summary_columns_v2_to_v1 = dict(zip(summary_columns_v2, summary_columns_v1))
+
 expected_columns = [
     "N_protein_groups",
     "N_protein_true_hits",
@@ -217,7 +219,17 @@ def maxquant_qc_csv(
             return None
         if out_fn is not None:
             df.to_csv(abs_path, index=False)
-    df = df.reindex(columns=expected_columns)
+    df = df.rename(columns=summary_columns_v2_to_v1)
+
+    ordered_columns = list(expected_columns)
+    if "Date" in df.columns:
+        ordered_columns = ["Date"] + ordered_columns
+    if any(col in df.columns for col in summary_columns_v1):
+        ordered_columns = [col for col in ["Date"] + summary_columns_v1 + expected_columns]
+
+    existing_columns = [col for col in ordered_columns if col in df.columns]
+    remaining_columns = [col for col in df.columns if col not in existing_columns]
+    df = df.reindex(columns=existing_columns + remaining_columns)
     return df
 
 
@@ -250,12 +262,11 @@ def maxquant_qc(txt_path, protein=None, pept_list=None):
     if len(dfs) == 0:
         return None
     df = pd.concat(dfs, sort=False).to_frame().T
+    df = df.rename(columns=summary_columns_v2_to_v1)
     df["RUNDIR"] = str(txt_path)
 
     if "MS/MS Submitted" in df.columns:
         df = df.reindex(columns=["Date"] + summary_columns_v1 + expected_columns)
-    elif "MS/MS submitted" in df.columns:
-        df = df.reindex(columns=["Date"] + summary_columns_v2 + expected_columns)
     return df.infer_objects()
 
 
@@ -269,7 +280,7 @@ def maxquant_qc_summary(txt_path):
     if "MS/MS Submitted" in df_summary.index:
         return df_summary[summary_columns_v1]
     elif "MS/MS submitted" in df_summary.index:
-        return df_summary[summary_columns_v2]
+        return df_summary[summary_columns_v2].rename(index=summary_columns_v2_to_v1)
     return pd.Series(dtype=object)
 
 def maxquant_qc_protein_groups(txt_path, protein=None):
