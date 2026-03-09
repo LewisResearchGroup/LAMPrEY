@@ -3,7 +3,7 @@ beautifulsoup4
 # across rebuilds. Unpinned upgrades can change Dropdown rendering and break
 # the custom selectors in app/main/static/css/dashboard.css.
 dash==2.18.2
-dash-bootstrap-components==1.6.0
+dash-bootstrap-components==2.0.4
 dash-renderer==1.9.1
 dash-table==5.0.0
 dash-table-experiments
