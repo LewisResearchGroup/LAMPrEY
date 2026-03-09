@@ -24,7 +24,7 @@ django-ordered-model
 django-plotly-dash==2.4.3
 djangorestframework
 dpd_static_support
-joblib==1.2.0
+joblib==1.5.3
 pyarrow
 redis
 celery
