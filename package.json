@@ -5,6 +5,6 @@
     "lint:css": "stylelint --config stylelint.config.json --ignore-path stylelint.ignore 'app/main/static/css/**/*.css'"
   },
   "devDependencies": {
-    "stylelint": "^14.16.1"
+    "stylelint": "^17.4.0"
   }
 }
