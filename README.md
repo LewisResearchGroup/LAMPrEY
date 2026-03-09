@@ -23,78 +23,17 @@ Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io
 
 ## Quick Start
 
-Install Docker Engine and Docker Compose by following the Docker documentation for your platform. For Ubuntu, see [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
-
-The repository stores the bundled MaxQuant executable ZIP with Git LFS. Install `git-lfs` before cloning so `app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip` is downloaded as a real file instead of a small pointer.
-
-If `git lfs` is not available on Ubuntu or Debian, install it first:
-
-```bash
-sudo apt update
-sudo apt install -y git-lfs
-```
-
-Initialize Git LFS before cloning:
-
 ```bash
 git lfs install
-```
-
-Clone the repository:
-
-```bash
 git clone git@github.com:LewisResearchGroup/ProteomicsQC.git LAMPrEY
 cd LAMPrEY
 git lfs pull
-```
-
-If you already cloned and only need to materialize the bundled MaxQuant ZIP:
-
-```bash
-git lfs pull --include="app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip" --exclude=""
-```
-
-If you download the repository from the GitHub web UI instead of cloning it, make sure the repository is configured to include Git LFS objects in archives. Otherwise the archive will contain only the LFS pointer file.
-
-Generate the local configuration:
-
-```bash
 ./scripts/generate_config.sh
-```
-
-This guide uses `make` targets such as `make init` and `make devel` as shortcuts for Docker Compose commands. If your Docker setup requires elevated privileges, run the `make` targets with a user that can use `sudo`; otherwise they run without it.
-
-`make` is a host-side convenience tool. It is not part of Docker and it is not provided by the application container.
-
-On Ubuntu or Debian, install it with:
-
-```bash
-sudo apt update
-sudo apt install make
-```
-
-If `make` is not available on your system, you can still run the equivalent `docker compose ...` commands manually.
-
-Run the first-time setup:
-
-```bash
 make init
-```
-
-By default, `make init` uses the published container image.
-
-If the published image is unavailable, use the local-build fallback:
-
-```bash
-make init-local
-```
-
-Start the application:
-
-```bash
 make devel   # development server on http://127.0.0.1:8000
-make serve   # production-style server on http://localhost:8080
 ```
+
+For full installation details, fallback setup paths, and troubleshooting, see [docs/installation.md](docs/installation.md).
 
 ## Setup Modes
 
@@ -125,4 +64,5 @@ make test          # run tests
 - The dashboard is available at `/dashboard` after login.
 - Pipeline uploads and API requests are scoped to the authenticated user's projects.
 - The bundled MaxQuant ZIP is stored with Git LFS.
+- If `make` or `git-lfs` is missing, or if you need the local-build fallback (`make init-local`), use the installation guide.
 - For installation details, admin usage, API documentation, and operational notes, see the documentation site.

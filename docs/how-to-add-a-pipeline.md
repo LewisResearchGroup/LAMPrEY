@@ -12,7 +12,7 @@ Fill in the editable fields and upload the required configuration:
 
 1. Select the MaxQuant version. If no explicit version is selected, the default bundled version (2.4.12.0) is used.
 2. Add a `FASTA` file with the target protein sequences.
-3. Add an `mqpar.xml` file generated with MaxQuant. If no explicit mqpar.xml is submitted, the default mqpar.xml file for bundled version (2.4.12.0) is used.
+3. Add an `mqpar.xml` file generated with MaxQuant. If no explicit mqpar.xml is submitted, the default mqpar.xml file for bundled version (2.4.12.0) is used. For template requirements such as the single-RAW assumption and placeholder handling, see [How to prepare `mqpar.xml`](how-to-prepare-mqpar.md).
 4. Provide command-line parameters for [RawTools](https://github.com/kevinkovalchik/RawTools). Read [RawTools help](https://github.com/kevinkovalchik/RawTools/wiki/Run-RawTools-for-parsing-and-quantification-for-Linux) for the supported arguments.
 
 After saving the pipeline:

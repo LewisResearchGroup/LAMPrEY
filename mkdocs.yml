@@ -8,6 +8,7 @@ nav:
         - Admin panel: how-to-access-the-admin-panel.md
         - Add a user: how-to-add-a-user.md
         - Create a project: how-to-add-a-project.md
+        - Prepare mqpar.xml: how-to-prepare-mqpar.md
         - Create a pipeline: how-to-add-a-pipeline.md
         - Submit RAW files: how-to-submit-raw-files.md
     - Components:
