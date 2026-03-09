@@ -483,8 +483,9 @@ def callbacks(app):
         # Keep a stable panel size across cohorts to avoid page-height jumps.
         fixed_height = 460
 
+        # Display metrics on y-axis and samples on x-axis.
         fig = T.px_heatmap(
-            df_plot,
+            df_plot.T,
             layout_kws=dict(
                 height=fixed_height,
             ),
@@ -515,12 +516,16 @@ def callbacks(app):
             tickangle=0,
             ticklabelposition="outside",
             automargin=True,
-            title_text="QC metrics",
+            title_text="Samples",
             title_standoff=12,
             showticklabels=False,
             ticks="",
         )
-        fig.update_yaxes(title_text="Samples", title_standoff=36)
+        fig.update_yaxes(
+            title_text="QC metrics",
+            title_standoff=20,
+            automargin=True,
+        )
 
         # SHAP diverging scale
         heatmap = [t for t in fig.data if t.type == "heatmap"][0]
@@ -531,14 +536,17 @@ def callbacks(app):
         heatmap.zmin = -rng
         heatmap.zmax =  rng
         heatmap.zmid = 0
+        # IsolationForest SHAP explains a normality-oriented model output:
+        # negative values push toward anomaly, positive values toward normality.
+        # Use the non-reversed scale so anomalous values render as red warnings.
         heatmap.colorscale = "RdBu"
 
         heatmap.colorbar.title = dict(
-            text="SHAP (- normal | + anomalous)",
+            text="SHAP (- anomalous | + normal)",
             side="right",
         )
         heatmap.colorbar.tickvals = [-rng, 0, rng]
-        heatmap.colorbar.ticktext = ["More normal", "0", "More anomalous"]
+        heatmap.colorbar.ticktext = ["More anomalous", "0", "More normal"]
         heatmap.colorbar.tickfont = dict(size=9)
         heatmap.colorbar.title.font = dict(size=11)
 
