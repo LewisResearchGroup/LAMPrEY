@@ -376,7 +376,7 @@ def callbacks(app):
             hovermode="closest",
             hoverlabel_namelength=-1,
             showlegend=False,
-            margin=dict(l=32, r=20, b=60, t=24, pad=0),
+            margin=dict(l=32, r=20, b=40, t=24, pad=0),
             font=C.figure_font,
             plot_bgcolor="#ffffff",
             paper_bgcolor="#ffffff",
@@ -394,6 +394,9 @@ def callbacks(app):
             zeroline=False,
             showline=True,
             linecolor="#e2e8ed",
+            tickangle=-90,
+            title_standoff=20,
+            automargin=True,
         )
         if x == "Index":
             index_max = int(pd.to_numeric(df["Index"], errors="coerce").max() or 0)
@@ -403,6 +406,12 @@ def callbacks(app):
                 tickformat="d",
                 range=[0.5, float(max(1, index_max)) + 0.5],
             )
+        elif x == "RawFile":
+            # Tighten the x-axis range for categorical labels so there is
+            # no blank padding at the start/end of the plot area.
+            n_samples = len(x_values)
+            if n_samples > 0:
+                fig.update_xaxes(range=[-0.5, n_samples - 0.5])
         fig.update_yaxes(
             title_text=metric_label,
             showgrid=True,
@@ -411,6 +420,8 @@ def callbacks(app):
             showline=True,
             linecolor="#e2e8ed",
             range=[0, y_upper],
+            title_standoff=30,
+            automargin=True,
         )
 
         config = T.gen_figure_config(filename="QC-trends", editable=False)
