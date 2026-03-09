@@ -75,24 +75,6 @@ PROTEIN_METRICS = {
         "empty_message": "No unique sequence coverage values are available for these proteins.",
         "filename": "PQC-protein-explorer-unique-coverage",
     },
-    "Mol. weight [kDa]": {
-        "label": "Molecular weight (kDa)",
-        "y_title": "Molecular Weight (kDa)",
-        "empty_message": "No molecular-weight values are available for these proteins.",
-        "filename": "PQC-protein-explorer-mol-weight",
-    },
-    "Sequence length": {
-        "label": "Sequence length",
-        "y_title": "Sequence Length",
-        "empty_message": "No sequence-length values are available for these proteins.",
-        "filename": "PQC-protein-explorer-sequence-length",
-    },
-    "Number of proteins": {
-        "label": "Number of proteins",
-        "y_title": "Number of Proteins",
-        "empty_message": "No protein-count values are available for these proteins.",
-        "filename": "PQC-protein-explorer-num-proteins",
-    },
     "Q-value": {
         "label": "Q-value",
         "y_title": "Q-value",
