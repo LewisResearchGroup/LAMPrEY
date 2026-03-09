@@ -33,7 +33,7 @@ make init
 make devel   # development server on http://127.0.0.1:8000
 ```
 
-For full installation details, fallback setup paths, and troubleshooting, see [docs/installation.md](docs/installation.md).
+For full installation details, fallback setup paths, and troubleshooting, see the [Installation guide](https://LewisResearchGroup.github.io/LAMPrEY/installation/).
 
 ## Setup Modes
 
