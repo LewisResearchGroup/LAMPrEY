@@ -482,7 +482,7 @@ class DashboardRawFileActionTestCase(TestCase):
         }
         mock_get_pipeline_uploaders.return_value = {"status": "no_data", "data": []}
 
-        _table, scope_data, _uploaders, _scope_style, _scope_options, alert = refresh_qc_table(
+        _table, scope_data, _uploaders, _scope_style, _scope_options, _refresh_probe, alert = refresh_qc_table(
             self.project.slug,
             self.pipeline.slug,
             "__all__",
