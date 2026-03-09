@@ -1,3 +1,4 @@
+import logging
 import re
 import pandas as pd
 from dash import dcc, html
@@ -131,12 +132,15 @@ def callbacks(app):
         Output("qc-figure", "config"),
         Output("qc-figure", "style"),
         Output("qc-empty-state", "style"),
+        Input("tabs", "value"),
         Input("qc-scope-data", "data"),
         Input("qc-metric", "value"),
         Input("x", "value"),
     )
-    def plot_qc_figure(data_in, metric_in, x_in):
+    def plot_qc_figure(tab, data_in, metric_in, x_in):
         """Creates the QC trend plot figure."""
+        if tab != "quality_control":
+            raise PreventUpdate
         data = data_in
         if data is None:
             raise PreventUpdate
