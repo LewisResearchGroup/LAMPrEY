@@ -1,3 +1,5 @@
+import json
+import hashlib
 import logging
 import re
 import pandas as pd
@@ -173,12 +175,36 @@ layout = html.Div(
 
 
 def callbacks(app):
+    highlight_marker_color = "#ef4444"
+    highlight_marker_line_color = "#7f1d1d"
+
     def _sample_label_series(df):
         if "SampleLabel" in df.columns:
             return df["SampleLabel"].astype(str)
         if "RawFile" in df.columns:
             return df["RawFile"].astype(str)
         return df.index.astype(str)
+
+    def _scope_sig(scope_data):
+        return hashlib.md5(
+            json.dumps(scope_data or {}, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+
+    def _highlight_run_keys(scope_data, proposal, df):
+        if not proposal or df.empty:
+            return set()
+        if proposal.get("scope_sig") != _scope_sig(scope_data):
+            return set()
+        run_keys = set(proposal.get("run_keys_to_flag") or [])
+        if not run_keys:
+            return set()
+        if "RunKey" in df.columns:
+            available = set(df["RunKey"].astype(str))
+            return run_keys.intersection(available)
+        if "RawFile" in df.columns:
+            available = set(df["RawFile"].astype(str))
+            return run_keys.intersection(available)
+        return set()
 
     @app.callback(
         Output("qc-figure", "figure"),
@@ -189,8 +215,9 @@ def callbacks(app):
         Input("qc-scope-data", "data"),
         Input("qc-metric", "value"),
         Input("x", "value"),
+        Input("anomaly-proposed-flags", "data"),
     )
-    def plot_qc_figure(tab, data_in, metric_in, x_in):
+    def plot_qc_figure(tab, data_in, metric_in, x_in, anomaly_proposal):
         """Creates the QC trend plot figure."""
         if tab != "quality_control":
             raise PreventUpdate
@@ -215,6 +242,8 @@ def callbacks(app):
             df["DateAcquired"] = pd.to_datetime(df["DateAcquired"], errors="coerce")
         else:
             df["DateAcquired"] = pd.NaT
+
+        highlight_run_keys = _highlight_run_keys(data_in, anomaly_proposal, df)
 
         if x not in df.columns:
             x = "Index" if "Index" in df.columns else "RawFile"
@@ -282,6 +311,7 @@ def callbacks(app):
                                 "x_label_short": f"R{run_idx + 1}-T{channel_no}",
                                 "sample_label": sample_label,
                                 "run_label": run_label,
+                                "run_key": str(row.get("RunKey", run_label)),
                                 "channel_no": channel_no,
                                 "value": value,
                                 "run_idx": int(run_idx),
@@ -308,29 +338,52 @@ def callbacks(app):
                 tickvals = sample_tick_df["x_pos"].tolist()
                 ticktext = sample_tick_df["sample_label"].tolist()
 
-                fig = go.Figure(
-                    data=[
+                figure_data = [
+                    go.Scatter(
+                        x=long_df["x_pos"],
+                        y=long_df["value"],
+                        mode="lines+markers",
+                        showlegend=False,
+                        marker=dict(
+                            size=6,
+                            color="#06b6d4",
+                            line=dict(width=0.8, color="#ffffff"),
+                        ),
+                        line=dict(width=1.6, color="rgba(6, 182, 212, 0.5)"),
+                        text=long_df["x_label"],
+                        customdata=long_df["run_idx"],
+                        hovertemplate=(
+                            "<b>%{text}</b><br>"
+                            + f"{metric_label}: "
+                            + "%{y:.0f}<extra></extra>"
+                        ),
+                    )
+                ]
+                highlight_mask = long_df["run_key"].isin(highlight_run_keys)
+                if highlight_mask.any():
+                    figure_data.append(
                         go.Scatter(
-                            x=long_df["x_pos"],
-                            y=long_df["value"],
-                            mode="lines+markers",
+                            x=long_df.loc[highlight_mask, "x_pos"],
+                            y=long_df.loc[highlight_mask, "value"],
+                            mode="markers",
                             showlegend=False,
                             marker=dict(
-                                size=6,
-                                color="#06b6d4",
-                                line=dict(width=0.8, color="#ffffff"),
+                                size=9,
+                                color=highlight_marker_color,
+                                line=dict(width=1.2, color=highlight_marker_line_color),
                             ),
-                            line=dict(width=1.6, color="rgba(6, 182, 212, 0.5)"),
-                            text=long_df["x_label"],
-                            customdata=long_df["run_idx"],
+                            text=long_df.loc[highlight_mask, "x_label"],
+                            customdata=long_df.loc[highlight_mask, "run_idx"],
                             hovertemplate=(
                                 "<b>%{text}</b><br>"
                                 + f"{metric_label}: "
-                                + "%{y:.0f}<extra></extra>"
+                                + "%{y:.0f}<br>"
+                                + "Anomaly candidate<extra></extra>"
                             ),
                         )
-                    ]
-                )
+                    )
+
+                fig = go.Figure(data=figure_data)
                 fig.update_layout(
                     hovermode="closest",
                     hoverlabel_namelength=-1,
@@ -399,26 +452,53 @@ def callbacks(app):
         sample_labels = _sample_label_series(df)
         acquired = df["DateAcquired"].astype(str).replace("NaT", "N/A")
         x_values = sample_labels if x == "RawFile" else df[x]
-        fig = go.Figure(
-            data=[
+        figure_data = [
+            go.Scatter(
+                x=x_values,
+                y=y_series,
+                name=metric_label,
+                mode="lines+markers",
+                line=dict(width=2.5, color="#06b6d4", shape="linear"),
+                marker=dict(size=8, color="#06b6d4", line=dict(width=1.5, color="#ffffff")),
+                customdata=df.index.to_list(),
+                hovertext=sample_labels + "<br>" + acquired,
+                text=None if x == "RawFile" else sample_labels,
+                hovertemplate=(
+                    "<b>%{hovertext}</b><br>"
+                    + f"{metric_label}: "
+                    + f"%{{y:{y_hover_format}}}<extra></extra>"
+                ),
+            )
+        ]
+        highlight_series = (
+            df["RunKey"].astype(str).isin(highlight_run_keys)
+            if "RunKey" in df.columns
+            else raw_labels.isin(highlight_run_keys)
+        )
+        if highlight_series.any():
+            figure_data.append(
                 go.Scatter(
-                    x=x_values,
-                    y=y_series,
-                    name=metric_label,
-                    mode="lines+markers",
-                    line=dict(width=2.5, color="#06b6d4", shape="linear"),
-                    marker=dict(size=8, color="#06b6d4", line=dict(width=1.5, color="#ffffff")),
-                    customdata=df.index.to_list(),
-                    hovertext=sample_labels + "<br>" + acquired,
-                    text=None if x == "RawFile" else sample_labels,
+                    x=x_values[highlight_series],
+                    y=y_series[highlight_series],
+                    mode="markers",
+                    showlegend=False,
+                    marker=dict(
+                        size=11,
+                        color=highlight_marker_color,
+                        line=dict(width=1.6, color=highlight_marker_line_color),
+                    ),
+                    customdata=df.index[highlight_series].to_list(),
+                    hovertext=(sample_labels[highlight_series] + "<br>" + acquired[highlight_series]),
+                    text=None if x == "RawFile" else sample_labels[highlight_series],
                     hovertemplate=(
                         "<b>%{hovertext}</b><br>"
                         + f"{metric_label}: "
-                        + f"%{{y:{y_hover_format}}}<extra></extra>"
+                        + f"%{{y:{y_hover_format}}}<br>"
+                        + "Anomaly candidate<extra></extra>"
                     ),
                 )
-            ]
-        )
+            )
+        fig = go.Figure(data=figure_data)
 
         fig.update_layout(
             hovermode="closest",

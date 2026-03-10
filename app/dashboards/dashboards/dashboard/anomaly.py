@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import hashlib
 import pandas as pd
@@ -235,6 +236,30 @@ def compute_flag_proposals(qc_data, predictions):
     }
 
 
+def _available_anomaly_columns(df):
+    if df is None or df.empty:
+        return []
+
+    available = [
+        column
+        for column in C.qc_columns_options
+        if column in df.columns and column not in C.qc_columns_always
+    ]
+
+    tmt_pattern = re.compile(r"^TMT\d+_(missing_values|peptide_count|protein_group_count)$")
+    detected_tmt = sorted(
+        [column for column in df.columns if tmt_pattern.match(str(column))],
+        key=lambda column: (
+            int(re.search(r"\d+", str(column)).group(0)),
+            str(column),
+        ),
+    )
+    for column in detected_tmt:
+        if column not in available:
+            available.append(column)
+    return available
+
+
 def apply_anomaly_flag_changes(proposal, project, pipeline, user, n_clicks):
     if not n_clicks:
         raise PreventUpdate
@@ -306,7 +331,6 @@ def callbacks(app):
         Input("pipeline", "value"),
         Input("anomaly-fraction", "value"),
         Input("qc-scope-data", "data"),
-        State("qc-table-columns", "value"),
         State("anomaly-cache-key", "children"),
         State("shapley-values", "children"),
     )
@@ -316,7 +340,6 @@ def callbacks(app):
         pipeline,
         fraction_in,
         scope_data,
-        columns,
         cached_key,
         cached_payload,
         **kwargs,
@@ -330,16 +353,17 @@ def callbacks(app):
 
         fraction = (fraction_in or 5) / 100.0
         algorithm = "iforest"
-        columns = columns or []
         # Cache against the current scope payload itself, not just the selected
         # project/pipeline parameters, so a changed sample set forces recompute.
         scope_sig = hashlib.md5(json.dumps(scope_data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
+        model_columns = _available_anomaly_columns(qc_data)
         cache_key = json.dumps(
             {
                 "project": project,
                 "pipeline": pipeline,
                 "fraction": int(fraction_in or 5),
-                "columns": sorted(columns),
+                "columns": sorted(model_columns),
                 "scope_sig": scope_sig,
                 "algorithm": algorithm,
             },
@@ -355,7 +379,6 @@ def callbacks(app):
 
         # Use already loaded QC scope data from dashboard state to avoid
         # secondary API calls that may fail auth-context checks.
-        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
         if qc_data.empty or "RawFile" not in qc_data.columns:
             return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
         sample_count = len(qc_data.index)
@@ -376,7 +399,11 @@ def callbacks(app):
 
         try:
             predictions, df_shap = T.detect_anomalies(
-                qc_model, algorithm=algorithm, columns=columns, fraction=fraction, **params
+                qc_model,
+                algorithm=algorithm,
+                columns=model_columns,
+                fraction=fraction,
+                **params,
             )
         except Exception as exc:
             logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
@@ -388,6 +415,7 @@ def callbacks(app):
                 "project": project,
                 "pipeline": pipeline,
                 "fraction": int(fraction_in or 5),
+                "scope_sig": scope_sig,
                 "cache_key": cache_key,
             }
         )
