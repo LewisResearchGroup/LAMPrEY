@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import pytest
 
 from omics.proteomics.maxquant.quality_control import (
     maxquant_qc,
@@ -11,6 +12,26 @@ from omics.proteomics.maxquant.quality_control import (
 )
 
 PATH = os.path.join("tests", "omics", "data", "maxquant", "tmt11", "example-0")
+
+
+def _write_tsv(path, filename, data):
+    pd.DataFrame(data).to_csv(os.path.join(path, filename), sep="\t", index=False)
+
+
+def _build_protein_groups(path, channels):
+    row = {
+        "Potential contaminant": None,
+        "Reverse": None,
+        "Majority protein IDs": "P00001",
+        "Only identified by site": None,
+        "Sequence coverage [%]": 50.0,
+        "Protein IDs": "P00001",
+        "Intensity": 1000.0,
+        "Peptide counts (all)": 5,
+    }
+    for ch in range(1, channels + 1):
+        row[f"Reporter intensity corrected {ch}"] = 0 if ch % 2 == 0 else 1000 + ch
+    _write_tsv(path, "proteinGroups.txt", [row])
 
 
 class TestMaxquantQualityControl:
@@ -215,6 +236,16 @@ class TestMaxquantQualityControl:
             "Uncalibrated - Calibrated m/z [Da] (sd)",
             "Peak Width(ave)",
             "Peak Width (std)",
+            "RUNDIR",
         ]
 
         assert all(actual_cols == expected_cols), actual_cols
+
+    @pytest.mark.parametrize("channels", [2, 6, 11, 18])
+    def test__dynamic_tmt_channel_counts(self, tmp_path, channels):
+        _build_protein_groups(tmp_path, channels)
+
+        out = maxquant_qc_protein_groups(tmp_path, protein=None)
+
+        for idx in range(1, channels + 1):
+            assert f"TMT{idx}_missing_values" in out.index

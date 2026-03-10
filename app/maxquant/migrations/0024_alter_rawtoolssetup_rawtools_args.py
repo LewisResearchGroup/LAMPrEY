@@ -14,6 +14,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='rawtoolssetup',
             name='rawtools_args',
-            field=models.CharField(default='-p -q -x -u -l -m -r TMT11 -chro 12TB', max_length=256, null=True, validators=[maxquant.rawtools.validate_rawtools_args]),
+            field=models.CharField(default='-p -x -u -l -m -chro 12TB', max_length=256, null=True, validators=[maxquant.rawtools.validate_rawtools_args]),
         ),
     ]

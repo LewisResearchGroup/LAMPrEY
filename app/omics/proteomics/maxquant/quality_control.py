@@ -34,23 +34,15 @@ summary_columns_v2 = [
 
 summary_columns_v2_to_v1 = dict(zip(summary_columns_v2, summary_columns_v1))
 
-expected_columns = [
+expected_columns_pre_tmt = [
     "N_protein_groups",
     "N_protein_true_hits",
     "N_protein_potential_contaminants",
     "N_protein_reverse_seq",
     "Protein_mean_seq_cov [%]",
-    "TMT1_missing_values",
-    "TMT2_missing_values",
-    "TMT3_missing_values",
-    "TMT4_missing_values",
-    "TMT5_missing_values",
-    "TMT6_missing_values",
-    "TMT7_missing_values",
-    "TMT8_missing_values",
-    "TMT9_missing_values",
-    "TMT10_missing_values",
-    "TMT11_missing_values",
+]
+
+expected_columns_post_tmt = [
     "N_peptides",
     "N_peptides_potential_contaminants",
     "N_peptides_reverse",
@@ -188,6 +180,30 @@ def _reporter_intensity_columns(df):
     )
 
 
+def _tmt_missing_value_columns(df):
+    cols = [
+        c
+        for c in df.columns
+        if isinstance(c, str) and re.match(r"^TMT\d+_missing_values$", c)
+    ]
+    return sorted(cols, key=lambda c: int(re.search(r"\d+", c).group(0)))
+
+
+def _ordered_columns(df):
+    if "MS/MS Submitted" in df.columns:
+        summary_cols = [c for c in summary_columns_v1 if c in df.columns]
+    elif "MS/MS submitted" in df.columns:
+        summary_cols = [c for c in summary_columns_v2 if c in df.columns]
+    else:
+        summary_cols = []
+
+    tmt_cols = _tmt_missing_value_columns(df)
+    core_cols = ["Date"] + summary_cols + expected_columns_pre_tmt + tmt_cols + expected_columns_post_tmt
+    core_cols = list(dict.fromkeys(core_cols))
+    extra_cols = [c for c in df.columns if c not in core_cols]
+    return core_cols + extra_cols
+
+
 def collect_maxquant_qc_data(root_path, force_update=False, from_csvs=True):
     """
     Generate MaxQuant quality control in all
@@ -222,15 +238,7 @@ def maxquant_qc_csv(
             df.to_csv(abs_path, index=False)
     df = df.rename(columns=summary_columns_v2_to_v1)
 
-    ordered_columns = list(expected_columns)
-    if "Date" in df.columns:
-        ordered_columns = ["Date"] + ordered_columns
-    if any(col in df.columns for col in summary_columns_v1):
-        ordered_columns = [col for col in ["Date"] + summary_columns_v1 + expected_columns]
-
-    existing_columns = [col for col in ordered_columns if col in df.columns]
-    remaining_columns = [col for col in df.columns if col not in existing_columns]
-    df = df.reindex(columns=existing_columns + remaining_columns)
+    df = df.reindex(columns=_ordered_columns(df))
     return df
 
 
@@ -266,8 +274,7 @@ def maxquant_qc(txt_path, protein=None, pept_list=None):
     df = df.rename(columns=summary_columns_v2_to_v1)
     df["RUNDIR"] = str(txt_path)
 
-    if "MS/MS Submitted" in df.columns:
-        df = df.reindex(columns=["Date"] + summary_columns_v1 + expected_columns)
+    df = df.reindex(columns=_ordered_columns(df))
     return df.infer_objects()
 
 
@@ -327,21 +334,7 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
     }
 
     if len(m_v) != 0:
-        l_1 = [
-            "TMT1_missing_values",
-            "TMT2_missing_values",
-            "TMT3_missing_values",
-            "TMT4_missing_values",
-            "TMT5_missing_values",
-            "TMT6_missing_values",
-            "TMT7_missing_values",
-            "TMT8_missing_values",
-            "TMT9_missing_values",
-            "TMT10_missing_values",
-            "TMT11_missing_values",
-        ]
-        l_2 = m_v + (11 - len(m_v)) * ["not detected"]
-        dic_m_v = dict(zip(l_1, l_2))
+        dic_m_v = {f"TMT{i + 1}_missing_values": v for i, v in enumerate(m_v)}
         result.update(dic_m_v)
 
     # Group-specific QC3_BSA metrics are temporarily disabled.

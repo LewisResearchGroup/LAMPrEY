@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from maxquant.models import Pipeline, RawFile, Result
+from maxquant.rawtools import DEFAULT_RAWTOOLS_ARGS
 from project.models import Project
 from user.models import User
 
@@ -180,7 +181,7 @@ def _upsert_pipeline(user: User, project: Project, pipeline_name: str) -> tuple[
                 _seed_mqpar_path().name,
                 _read_bytes(_seed_mqpar_path()),
             ),
-            rawtools_args="-q",
+            rawtools_args=DEFAULT_RAWTOOLS_ARGS,
         )
         created = True
     else:
