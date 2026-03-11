@@ -715,23 +715,19 @@ body {
 /* ═══════════════════════════════════════════════════════════════════════════
    Anomaly Tab
    ═══════════════════════════════════════════════════════════════════════════ */
-.pqc-anomaly-controls {
+/* ── Anomaly sidebar ── */
+.pqc-anomaly-sidebar {
+  flex: 0 0 260px;
+  width: 260px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 4px 0 8px;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--g-200);
   border-radius: var(--radius-lg);
   background: #ffffff;
   box-shadow: var(--shadow-xs);
-}
-
-.pqc-anomaly-controls-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(360px, 1fr) minmax(320px, 420px) minmax(220px, 260px);
-  align-items: stretch;
-  gap: 12px;
+  overflow-y: auto;
 }
 
 /* Anomaly sub-panels */
@@ -741,7 +737,6 @@ body {
   border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--g-50);
-  min-height: 74px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -754,42 +749,19 @@ body {
   line-height: 1.4;
 }
 
-.pqc-anomaly-slider-panel {
-  border: 1px solid var(--g-200);
-  border-radius: var(--radius-md);
-  padding: 10px 14px 6px;
-  background: var(--g-50);
+.pqc-anomaly-sidebar .pqc-field-label {
+  margin: 0 0 4px;
+  font-size: 13px;
 }
 
-.pqc-anomaly-slider-panel-inline {
-  margin: 0;
-  min-height: 74px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.pqc-anomaly-sidebar .pqc-panel-kicker {
+  font-size: 13px;
 }
 
-.pqc-anomaly-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.pqc-anomaly-controls .pqc-field-label {
-  margin: 0;
-}
-
-.pqc-anomaly-fraction-value {
-  display: none;
-}
-
-/* Slider styling */
+/* Slider styling (sidebar) */
 .pqc-anomaly-slider-wrap {
   min-width: 0;
   width: 100%;
-  flex: 1 1 auto;
   padding: 0 2px 2px;
 }
 
@@ -813,9 +785,9 @@ body {
 .pqc-anomaly-slider-wrap .rc-slider-handle {
   border: 2px solid var(--fb-500);
   background: #ffffff;
-  width: 18px;
-  height: 18px;
-  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
   box-shadow: var(--shadow-brand-ring-soft);
   transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
@@ -837,25 +809,8 @@ body {
   transform: translateX(-50%);
 }
 
-/* Anomaly extra controls */
-.pqc-anomaly-extra-controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-  flex: 0 0 auto;
-  align-self: stretch;
-  border: 1px solid var(--g-200);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  background: var(--g-50);
-  min-height: 74px;
-}
-
+/* Control blocks */
 .pqc-anomaly-control-block {
-  min-width: 158px;
-  width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -865,17 +820,12 @@ body {
   background: transparent;
 }
 
-.pqc-anomaly-control-block .pqc-field-label {
-  margin-bottom: 4px;
-}
-
 /* Anomaly apply panel */
 .pqc-anomaly-apply-panel {
   border: 1px solid var(--g-200);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--g-50);
-  min-height: 74px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -884,15 +834,15 @@ body {
 
 .pqc-anomaly-apply-btn {
   min-height: 36px;
-  height: 36px;
+  height: auto;
   border: 1px solid var(--fb-300);
   border-radius: var(--radius-md);
   background: #ffffff;
   color: var(--fb-700);
   font-size: 13px;
   font-weight: 600;
-  padding: 0 14px;
-  text-align: left;
+  padding: 8px 14px;
+  text-align: center;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -1070,46 +1020,10 @@ body {
     min-width: 0;
   }
 
-  .pqc-anomaly-controls {
+  .pqc-anomaly-sidebar {
+    flex: 0 0 auto;
+    width: 100%;
     padding: 10px;
-  }
-
-  .pqc-anomaly-controls-row {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .pqc-anomaly-head {
-    min-width: 0;
-  }
-
-  .pqc-anomaly-label-row {
-    margin-bottom: 6px;
-  }
-
-  .pqc-anomaly-slider-wrap {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .pqc-anomaly-slider-wrap .rc-slider {
-    width: 100%;
-  }
-
-  .pqc-anomaly-extra-controls {
-    gap: 8px;
-    grid-template-columns: 1fr;
-    flex-wrap: wrap;
-    min-height: 0;
-  }
-
-  .pqc-anomaly-control-block {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .pqc-anomaly-apply-panel {
-    min-height: 0;
   }
 
   .pqc-anomaly-plot-area {

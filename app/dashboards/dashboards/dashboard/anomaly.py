@@ -1,7 +1,9 @@
 import os
 import re
+import io
 import json
 import hashlib
+import zipfile
 import pandas as pd
 
 import dash
@@ -16,112 +18,139 @@ from dashboards.dashboards.dashboard import tools as T
 
 
 layout = html.Div(
-    style={"display": "flex", "flexDirection": "column", "height": "100%", "minHeight": "400px"},
+    style={"display": "flex", "flexDirection": "row", "height": "100%", "minHeight": "400px", "gap": "12px"},
     children=[
+        # ── Left: heatmap plot area ──
         html.Div(
-            className="pqc-anomaly-controls",
-            style={"flex": "0 0 auto"},
+            className="pqc-anomaly-plot-area",
+            style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
             children=[
                 html.Div(
-                    className="pqc-anomaly-controls-row",
+                    "No anomaly plot data available for this scope.",
+                    id="anomaly-empty-state",
+                    className="pqc-empty-state",
+                    style={"display": "none"},
+                ),
+                html.Div(
+                    className="pqc-anomaly-loading-scope",
+                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
                     children=[
+                        html.Div(id="anomaly-progress-probe", className="pqc-hidden-trigger"),
+                        dcc.Graph(
+                            id="anomaly-figure",
+                            figure={},
+                            responsive=True,
+                            style={
+                                "display": "block",
+                                "width": "100%",
+                                "height": "100%",
+                                "flex": "1 1 auto",
+                                "minHeight": "0",
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        # ── Right: settings sidebar ──
+        html.Div(
+            className="pqc-anomaly-sidebar",
+            children=[
+                html.Div(
+                    className="pqc-anomaly-head",
+                    children=[
+                        html.Div("Anomaly Settings", className="pqc-panel-kicker"),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Outlier fraction", className="pqc-field-label"),
                         html.Div(
-                            className="pqc-anomaly-head",
+                            className="pqc-anomaly-slider-wrap",
                             children=[
-                                html.Div("Anomaly Settings", className="pqc-panel-kicker"),
-                                html.Div(
-                                    "Tune sensitivity and display options for outlier screening.",
-                                    className="pqc-anomaly-subtitle",
+                                dcc.Slider(
+                                    id="anomaly-fraction",
+                                    value=5,
+                                    min=1,
+                                    max=100,
+                                    step=1,
+                                    marks={
+                                        1: {"label": "1%"},
+                                        50: {"label": "50%"},
+                                        100: {"label": "100%"},
+                                    },
+                                    tooltip={"placement": "bottom", "always_visible": False},
                                 ),
                             ],
                         ),
-                        html.Div(
-                            className="pqc-anomaly-slider-panel pqc-anomaly-slider-panel-inline",
-                            children=[
-                                html.Div(
-                                    className="pqc-anomaly-label-row",
-                                    children=[
-                                        html.Div("Outlier fraction", className="pqc-field-label"),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-anomaly-slider-wrap",
-                                    children=[
-                                        dcc.Slider(
-                                            id="anomaly-fraction",
-                                            value=5,
-                                            min=1,
-                                            max=100,
-                                            step=1,
-                                            marks={
-                                                i: {"label": f"{i}%"}
-                                                for i in [1, 25, 50, 75, 100]
-                                            },
-                                            tooltip={"placement": "bottom", "always_visible": False},
-                                        )
-                                    ],
-                                ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Row order", className="pqc-field-label"),
+                        dcc.Dropdown(
+                            id="anomaly-row-order",
+                            className="pqc-anomaly-dropdown",
+                            clearable=False,
+                            searchable=False,
+                            options=[
+                                {"label": "Input order", "value": "input"},
+                                {"label": "Anomalous first", "value": "anomalous_first"},
                             ],
+                            value="input",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Metrics shown", className="pqc-field-label"),
+                        dcc.Dropdown(
+                            id="anomaly-metric-count",
+                            className="pqc-anomaly-dropdown",
+                            clearable=False,
+                            searchable=False,
+                            options=[
+                                {"label": "10", "value": 10},
+                                {"label": "15", "value": 15},
+                                {"label": "20", "value": 20},
+                                {"label": "25", "value": 25},
+                                {"label": "30", "value": 30},
+                                {"label": "All", "value": "all"},
+                            ],
+                            value=20,
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Export", className="pqc-field-label"),
+                        html.Button(
+                            "Download data",
+                            id="anomaly-download-btn",
+                            className="pqc-anomaly-apply-btn",
+                            n_clicks=0,
+                        ),
+                        dcc.Download(id="anomaly-download"),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-apply-panel",
+                    children=[
+                        html.Div("Apply changes", className="pqc-field-label"),
+                        html.Button(
+                            "Apply flag changes",
+                            id="anomaly-apply",
+                            className="pqc-anomaly-apply-btn",
+                            n_clicks=0,
+                            disabled=True,
                         ),
                         html.Div(
-                            className="pqc-anomaly-extra-controls",
-                            children=[
-                                html.Div(
-                                    className="pqc-anomaly-control-block",
-                                    children=[
-                                        html.Div("Row order", className="pqc-field-label"),
-                                        dcc.Dropdown(
-                                            id="anomaly-row-order",
-                                            className="pqc-anomaly-dropdown",
-                                            clearable=False,
-                                            searchable=False,
-                                            options=[
-                                                {"label": "Input order", "value": "input"},
-                                                {"label": "Anomalous first", "value": "anomalous_first"},
-                                            ],
-                                            value="input",
-                                        ),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-anomaly-control-block",
-                                    children=[
-                                        html.Div("Metrics shown", className="pqc-field-label"),
-                                        dcc.Dropdown(
-                                            id="anomaly-metric-count",
-                                            className="pqc-anomaly-dropdown",
-                                            clearable=False,
-                                            searchable=False,
-                                            options=[
-                                                {"label": "10", "value": 10},
-                                                {"label": "15", "value": 15},
-                                                {"label": "20", "value": 20},
-                                                {"label": "25", "value": 25},
-                                                {"label": "30", "value": 30},
-                                                {"label": "All", "value": "all"},
-                                            ],
-                                            value=20,
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                        html.Div(
-                            className="pqc-anomaly-apply-panel",
-                            children=[
-                                html.Div("Apply changes", className="pqc-field-label"),
-                                html.Button(
-                                    "Apply proposed flag changes",
-                                    id="anomaly-apply",
-                                    className="pqc-anomaly-apply-btn",
-                                    n_clicks=0,
-                                    disabled=True,
-                                ),
-                                html.Div(
-                                    id="anomaly-apply-status",
-                                    className="pqc-anomaly-apply-status",
-                                ),
-                            ],
+                            id="anomaly-apply-status",
+                            className="pqc-anomaly-apply-status",
                         ),
                     ],
                 ),
@@ -140,43 +169,6 @@ layout = html.Div(
                         ),
                     ],
                 ),
-            ],
-        ),
-        html.Div(
-            className="pqc-anomaly-plot-area",
-            style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
-            children=[
-                html.Div(
-                    "No anomaly plot data available for this scope.",
-                    id="anomaly-empty-state",
-                    className="pqc-empty-state",
-                    style={"display": "none"},
-                ),
-                dcc.Loading(
-                    id="anomaly-loading",
-                    type="circle",
-                    parent_style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
-                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0", "height": "100%"},
-                    children=html.Div(
-                        className="pqc-anomaly-loading-scope",
-                        style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
-                        children=[
-                            html.Div(id="anomaly-progress-probe", className="pqc-hidden-trigger"),
-                            dcc.Graph(
-                                id="anomaly-figure",
-                                figure={},
-                                responsive=True,
-                                style={
-                                    "display": "block",
-                                    "width": "100%",
-                                    "height": "100%",
-                                    "flex": "1 1 auto",
-                                    "minHeight": "0",
-                                },
-                            ),
-                        ],
-                    ),
-                )
             ],
         ),
     ]
@@ -663,10 +655,6 @@ def callbacks(app):
         )
         details = html.Div(
             [
-                html.Div(
-                    "Manual flags remain unchanged until you click Apply. "
-                    "Applying will overwrite current flag states for the listed samples."
-                ),
                 html.Div(preview_lines),
             ]
         )
@@ -689,3 +677,151 @@ def callbacks(app):
             user=user,
             n_clicks=n_clicks,
         )
+
+    @app.callback(
+        Output("anomaly-download", "data"),
+        Input("anomaly-download-btn", "n_clicks"),
+        State("shapley-values", "children"),
+        State("qc-scope-data", "data"),
+        State("anomaly-row-order", "value"),
+        State("anomaly-metric-count", "value"),
+        State("anomaly-proposed-flags", "data"),
+        State("project", "value"),
+        State("pipeline", "value"),
+    )
+    def download_anomaly_data(
+        n_clicks,
+        shapley_values,
+        scope_data,
+        row_order,
+        metric_count,
+        proposal,
+        project,
+        pipeline,
+    ):
+        if not n_clicks:
+            raise PreventUpdate
+        if shapley_values is None or not scope_data:
+            raise PreventUpdate
+
+        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
+        if qc_data.empty or "RawFile" not in qc_data.columns:
+            raise PreventUpdate
+
+        try:
+            df_shap = pd.read_json(shapley_values, orient="split")
+        except ValueError:
+            df_shap = pd.read_json(shapley_values)
+
+        # Build labeled index (same logic as the plot callback)
+        row_keys = (
+            qc_data["RunKey"].astype(str)
+            if "RunKey" in qc_data.columns
+            else qc_data["RawFile"].astype(str)
+        )
+        row_labels = (
+            qc_data["SampleLabel"].astype(str)
+            if "SampleLabel" in qc_data.columns
+            else qc_data["RawFile"].astype(str)
+        )
+        label_by_key = dict(zip(row_keys, row_labels))
+        df_shap.index = df_shap.index.astype(str)
+        df_shap = df_shap.reindex(row_keys).fillna(0)
+
+        # Add anomaly label column from proposal
+        anomaly_keys = set()
+        if proposal:
+            anomaly_keys = set(proposal.get("run_keys_to_flag") or [])
+        df_shap["__anomaly_label__"] = [
+            "Anomaly" if key in anomaly_keys else "Normal"
+            for key in row_keys
+        ]
+
+        df_shap.index = [label_by_key.get(key, key) for key in row_keys]
+
+        if row_order == "anomalous_first":
+            sample_rank = df_shap.drop(columns=["__anomaly_label__"]).abs().mean(axis=1).sort_values(ascending=False).index
+            df_shap = df_shap.reindex(sample_rank)
+
+        if metric_count != "all":
+            max_metrics = int(metric_count or 20)
+            shap_cols = [c for c in df_shap.columns if c != "__anomaly_label__"]
+            metric_rank = df_shap[shap_cols].abs().mean(axis=0).sort_values(ascending=False).index
+            keep = list(metric_rank[:max_metrics])
+            if "__anomaly_label__" not in keep:
+                keep.append("__anomaly_label__")
+            df_shap = df_shap.loc[:, keep]
+
+        # Extract anomaly labels, then drop the helper column
+        anomaly_labels = df_shap.pop("__anomaly_label__")
+
+        # Use full metric names (not truncated) for the CSV
+        df_shap.columns = [_pretty_metric_name(c) for c in df_shap.columns]
+
+        # Prepend the anomaly label
+        df_out = df_shap.copy()
+        df_out.insert(0, "Anomaly Label", anomaly_labels.values)
+        df_out.index.name = "Sample"
+
+        base = f"anomaly-{project or 'project'}-{pipeline or 'pipeline'}"
+
+        # Build ZIP with CSV + heatmap PNG
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            csv_buf = io.StringIO()
+            df_out.to_csv(csv_buf)
+            zf.writestr(f"{base}-shap-values.csv", csv_buf.getvalue())
+
+            # Render heatmap with matplotlib/seaborn
+            try:
+                import matplotlib
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+                import seaborn as sns
+
+                # Build the plot-ready matrix (same labels as the Plotly heatmap)
+                df_plot = df_shap.copy()
+                df_plot.index = [
+                    _short_label_keep_ends(v, max_len=30, tail_len=8)
+                    for v in df_plot.index
+                ]
+                df_plot.columns = [
+                    _short_label(c, max_len=30) for c in df_plot.columns
+                ]
+
+                n_metrics = len(df_plot.columns)
+                n_samples = len(df_plot.index)
+                fig_w = max(6, 1.0 * n_samples + 3)
+                fig_h = max(4, 0.35 * n_metrics + 1.5)
+
+                rng = max(abs(df_plot.values.min()), abs(df_plot.values.max()))
+                fig_mpl, ax = plt.subplots(figsize=(fig_w, fig_h))
+                sns.heatmap(
+                    df_plot.T,
+                    ax=ax,
+                    cmap="RdBu",
+                    center=0,
+                    vmin=-rng,
+                    vmax=rng,
+                    linewidths=0.5,
+                    linecolor="#ffffff",
+                    cbar_kws={
+                        "label": "SHAP (- anomalous | + normal)",
+                        "shrink": 0.8,
+                    },
+                )
+                ax.set_xlabel("Samples", fontsize=11)
+                ax.set_ylabel("QC Metrics", fontsize=11)
+                ax.tick_params(axis="y", labelsize=8)
+                ax.tick_params(axis="x", labelsize=8, rotation=45)
+                plt.tight_layout()
+
+                png_buf = io.BytesIO()
+                fig_mpl.savefig(png_buf, format="png", dpi=150)
+                plt.close(fig_mpl)
+                png_buf.seek(0)
+                zf.writestr(f"{base}-heatmap.png", png_buf.getvalue())
+            except Exception:
+                pass  # matplotlib/seaborn not available — skip figure
+
+        return dcc.send_bytes(zip_buf.getvalue(), f"{base}.zip")
