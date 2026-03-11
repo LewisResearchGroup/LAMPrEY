@@ -605,6 +605,14 @@ body {
   margin-bottom: 4px;
 }
 
+/* Download button inside the toolbar should match dropdown height */
+.pqc-qc-plot-toolbar .pqc-anomaly-apply-btn {
+  min-height: 42px;
+  height: 42px;
+  min-width: 140px;
+  box-sizing: border-box;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Protein Intensity Dropdowns
    ═══════════════════════════════════════════════════════════════════════════ */

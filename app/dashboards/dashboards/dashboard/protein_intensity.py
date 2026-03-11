@@ -158,6 +158,19 @@ layout = html.Div(
                         ),
                     ],
                 ),
+                html.Div(
+                    className="pqc-qc-xaxis-wrap",
+                    style={"display": "flex", "alignItems": "flex-end"},
+                    children=[
+                        html.Button(
+                            "Download CSV",
+                            id="protein-download-btn",
+                            className="pqc-anomaly-apply-btn",
+                            n_clicks=0,
+                        ),
+                        dcc.Download(id="protein-download"),
+                    ],
+                ),
             ],
         ),
         html.Div(
@@ -620,3 +633,68 @@ def callbacks(app):
         )
 
         return fig, config, shown_style, "", {"display": "none"}, None
+
+    @app.callback(
+        Output("protein-download", "data"),
+        Input("protein-download-btn", "n_clicks"),
+        State("protein-intensity-proteins", "value"),
+        State("protein-intensity-metric", "value"),
+        State("project", "value"),
+        State("pipeline", "value"),
+        State("qc-scope-data", "data"),
+    )
+    def download_protein_data(n_clicks, proteins, selected_metric, project, pipeline, scope_data, **kwargs):
+        if not n_clicks:
+            raise PreventUpdate
+        proteins = [str(p).strip() for p in (proteins or []) if str(p).strip()]
+        proteins = list(dict.fromkeys(proteins))
+        if not proteins or not project or not pipeline:
+            raise PreventUpdate
+
+        scope_df = pd.DataFrame(T.dashboard_rows(scope_data))
+        if scope_df.empty or "RawFile" not in scope_df.columns:
+            raise PreventUpdate
+        raw_files = scope_df["RawFile"].dropna().astype(str).tolist()
+        if not raw_files:
+            raise PreventUpdate
+
+        metric_key = (
+            selected_metric
+            if selected_metric in PROTEIN_METRICS
+            else "Reporter intensity corrected"
+        )
+        metric_spec = PROTEIN_METRICS[metric_key]
+        user = kwargs.get("user")
+        requested_columns = [metric_key]
+        payload_result = T.get_protein_groups(
+            project=project,
+            pipeline=pipeline,
+            protein_names=proteins,
+            columns=requested_columns,
+            data_range=None,
+            raw_files=raw_files,
+            user=user,
+        )
+        payload = T.dashboard_result_data(payload_result, {})
+        data_df = pd.DataFrame(payload) if payload else pd.DataFrame()
+        if data_df.empty:
+            raise PreventUpdate
+
+        # For reporter intensity, expand all channel columns
+        protein_col = "Majority protein IDs"
+        if metric_key == "Reporter intensity corrected":
+            intensity_cols = [
+                col for col in data_df.columns
+                if isinstance(col, str) and col.startswith("Reporter intensity corrected ")
+            ]
+            if intensity_cols:
+                keep_cols = ["RawFile", protein_col] + intensity_cols
+                keep_cols = [c for c in keep_cols if c in data_df.columns]
+                data_df = data_df[keep_cols]
+        else:
+            keep_cols = ["RawFile", protein_col, metric_key]
+            keep_cols = [c for c in keep_cols if c in data_df.columns]
+            data_df = data_df[keep_cols]
+
+        filename = f"protein-explorer-{metric_spec.get('filename', 'data')}-{project or 'project'}-{pipeline or 'pipeline'}.csv"
+        return dcc.send_data_frame(data_df.to_csv, filename, index=False)

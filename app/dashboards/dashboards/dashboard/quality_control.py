@@ -5,7 +5,7 @@ import re
 import pandas as pd
 from dash import dcc, html
 
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
 import plotly.graph_objects as go
@@ -161,6 +161,19 @@ layout = html.Div(
                             className="pqc-metric-dropdown",
                             clearable=False,
                         ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-qc-xaxis-wrap",
+                    style={"display": "flex", "alignItems": "flex-end"},
+                    children=[
+                        html.Button(
+                            "Download CSV",
+                            id="qc-download-btn",
+                            className="pqc-anomaly-apply-btn",
+                            n_clicks=0,
+                        ),
+                        dcc.Download(id="qc-download"),
                     ],
                 ),
             ],
@@ -641,3 +654,38 @@ def callbacks(app):
         graph_style = {**GRAPH_STYLE, "display": "block"}
 
         return fig, config, graph_style, {"display": "none", "flex": "1 1 auto"}
+
+    @app.callback(
+        Output("qc-download", "data"),
+        Input("qc-download-btn", "n_clicks"),
+        State("qc-scope-data", "data"),
+        State("project", "value"),
+        State("pipeline", "value"),
+    )
+    def download_qc_data(n_clicks, scope_data, project, pipeline):
+        if not n_clicks:
+            raise PreventUpdate
+        if not scope_data:
+            raise PreventUpdate
+
+        df = pd.DataFrame(T.dashboard_rows(scope_data))
+        if df.empty:
+            raise PreventUpdate
+
+        # Use human-readable labels for columns where available
+        rename = {}
+        for col in df.columns:
+            if col in METRIC_LABELS:
+                rename[col] = METRIC_LABELS[col]
+        df_out = df.rename(columns=rename)
+
+        # Use sample labels as the index if available
+        if "SampleLabel" in df_out.columns:
+            df_out.index = df_out["SampleLabel"]
+            df_out.index.name = "Sample"
+        elif "RawFile" in df_out.columns:
+            df_out.index = df_out["RawFile"]
+            df_out.index.name = "Sample"
+
+        filename = f"qc-metrics-{project or 'project'}-{pipeline or 'pipeline'}.csv"
+        return dcc.send_data_frame(df_out.to_csv, filename)
