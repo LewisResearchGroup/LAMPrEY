@@ -237,20 +237,18 @@ def compute_flag_proposals(qc_data, predictions, shap_values=None):
     for action, keys in (("flag", run_keys_to_flag), ("unflag", run_keys_to_unflag)):
         for key in keys:
             row = frame.loc[frame[index_col] == key].iloc[0]
-            preview_rows.append(
-                {
-                    "run_key": key,
-                    "sample_label": row[label_col],
-                    "raw_file": row.get("RawFile", row[label_col]),
-                    "action": action,
-                    "current_flagged": bool(row["Flagged"]),
-                    "top_contributors": (
-                        _top_anomaly_contributors(key, shap_values)
-                        if action == "flag"
-                        else []
-                    ),
-                }
-            )
+            preview_row = {
+                "run_key": key,
+                "sample_label": row[label_col],
+                "raw_file": row.get("RawFile", row[label_col]),
+                "action": action,
+                "current_flagged": bool(row["Flagged"]),
+            }
+            if shap_values is not None and action == "flag":
+                preview_row["top_contributors"] = _top_anomaly_contributors(
+                    key, shap_values
+                )
+            preview_rows.append(preview_row)
 
     return {
         "run_keys_to_flag": run_keys_to_flag,
