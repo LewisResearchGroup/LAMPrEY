@@ -2,9 +2,9 @@
 
 LAMPrEY is a Docker-based quality control pipeline server for quantitative proteomics. It is designed for laboratories that want to organize proteomics pipelines, process RAW files automatically, and review QC results through a web interface.
 
-![](docs/img/ProteomicsQC1.png "LAMPrEY interface overview")
-
 Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io/LAMPrEY/)
+
+![](docs/img/ProteomicsQC1.png "LAMPrEY interface overview")
 
 ## What It Provides
 
@@ -18,10 +18,14 @@ Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io
 
 - Docker Engine
 - Docker Compose, either `docker-compose` or `docker compose`
-- `make`
 - `git-lfs`
+- `make`
+
+For full installation details, fallback setup paths, and troubleshooting, see the [Installation guide](https://LewisResearchGroup.github.io/LAMPrEY/installation/).
 
 ## Quick Start
+
+Assuming you have the above requirements installed, you can get started with LAMPrEY in a few steps:
 
 ```bash
 git lfs install
@@ -32,8 +36,6 @@ git lfs pull
 make init
 make devel   # development server on http://127.0.0.1:8000
 ```
-
-For full installation details, fallback setup paths, and troubleshooting, see the [Installation guide](https://LewisResearchGroup.github.io/LAMPrEY/installation/).
 
 ## Setup Modes
 
@@ -49,7 +51,7 @@ For full installation details, fallback setup paths, and troubleshooting, see th
 ## Common Commands
 
 ```bash
-make devel         # start the development stack
+make devel         # start the development stack on http://127.0.0.1:8000
 make devel-build   # rebuild and start the development stack
 make serve         # start the production-style stack
 make down          # stop containers

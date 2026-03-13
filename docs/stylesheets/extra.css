@@ -1,3 +1,16 @@
+.md-header,
+[data-md-color-scheme="default"] {
+    --md-primary-fg-color: #2f86b8;
+    --md-primary-fg-color--light: #5ea7cf;
+    --md-primary-fg-color--dark: #266f97;
+}
+
+[data-md-color-scheme="slate"] {
+    --md-primary-fg-color: #2a6f94;
+    --md-primary-fg-color--light: #4c87a8;
+    --md-primary-fg-color--dark: #1d526f;
+}
+
 .md-content p {
     text-align: justify;
     text-justify: inter-word;
@@ -21,14 +34,14 @@
     padding-top: 1rem;
     background:
         url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1123 258'><path d='M1124,2c0,0 0,256 0,256l-1125,0l0,-48c0,0 16,5 55,5c116,0 197,-92 325,-92c121,0 114,46 254,46c140,0 214,-167 572,-166Z' style='fill: white' /></svg>") no-repeat bottom,
-        linear-gradient(to bottom, var(--md-primary-fg-color), #00897b 99%, white 99%);
+        linear-gradient(to bottom, var(--md-primary-fg-color), #0f8c84 99%, white 99%);
 }
 
 /* Dark Mode adjustment for the wave color and gradient end */
 [data-md-color-scheme="slate"] .mdx-container {
     background:
         url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1123 258'><path d='M1124,2c0,0 0,256 0,256l-1125,0l0,-48c0,0 16,5 55,5c116,0 197,-92 325,-92c121,0 114,46 254,46c140,0 214,-167 572,-166Z' style='fill: hsla(232, 15%, 21%, 1)' /></svg>") no-repeat bottom,
-        linear-gradient(to bottom, var(--md-primary-fg-color), #00897b 99%, var(--md-default-bg-color) 99%);
+        linear-gradient(to bottom, var(--md-primary-fg-color), #0f8c84 99%, var(--md-default-bg-color) 99%);
 }
 
 
