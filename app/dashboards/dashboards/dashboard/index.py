@@ -105,6 +105,12 @@ timeout = 360
 
 
 protein_table_default_cols = []
+TAB_PANEL_STYLE = {
+    "display": "none",
+    "flex": "1 1 auto",
+    "flexDirection": "column",
+    "minHeight": "0",
+}
 BUTTON_STYLE = {
     "padding": "8px 18px",
     "backgroundColor": "#ecfeff",
@@ -308,7 +314,26 @@ layout = html.Div(
                                                 id="tabs-content",
                                                 className="pqc-canvas",
                                                 style={"display": "flex", "flexDirection": "column", "minHeight": "0"},
-                                                children=[],
+                                                children=[
+                                                    html.Div(
+                                                        id="tab-panel-quality-control",
+                                                        style={
+                                                            **TAB_PANEL_STYLE,
+                                                            "display": "flex",
+                                                        },
+                                                        children=quality_control.layout,
+                                                    ),
+                                                    html.Div(
+                                                        id="tab-panel-anomaly",
+                                                        style=TAB_PANEL_STYLE,
+                                                        children=anomaly.layout,
+                                                    ),
+                                                    html.Div(
+                                                        id="tab-panel-protein-intensity",
+                                                        style=TAB_PANEL_STYLE,
+                                                        children=protein_intensity.layout,
+                                                    ),
+                                                ],
                                             ),
                                         ]
                                     ),
@@ -328,6 +353,7 @@ layout = html.Div(
         html.Div(id="selection-output"),
         html.Div(id="selected-raw-files", style={"display": "none"}),
         html.Div(id="shapley-values", style={"display": "none"}),
+        dcc.Store(id="anomaly-predictions", data=None),
         html.Div(id="anomaly-cache-key", style={"display": "none"}),
         dcc.Store(id="anomaly-proposed-flags", data=None),
         dcc.Store(id="anomaly-apply-refresh", data=None),
@@ -359,14 +385,25 @@ quality_control.callbacks(app)
 protein_intensity.callbacks(app)
 
 
-@app.callback(Output("tabs-content", "children"), [Input("tabs", "value")])
+@app.callback(
+    Output("tab-panel-quality-control", "style"),
+    Output("tab-panel-anomaly", "style"),
+    Output("tab-panel-protein-intensity", "style"),
+    Input("tabs", "value"),
+)
 def render_content(tab):
+    qc_style = dict(TAB_PANEL_STYLE)
+    anomaly_style = dict(TAB_PANEL_STYLE)
+    protein_style = dict(TAB_PANEL_STYLE)
+
     if tab == "protein_intensity":
-        return protein_intensity.layout
-    if tab == "quality_control":
-        return quality_control.layout
-    if tab == "anomaly":
-        return anomaly.layout
+        protein_style["display"] = "flex"
+    elif tab == "anomaly":
+        anomaly_style["display"] = "flex"
+    else:
+        qc_style["display"] = "flex"
+
+    return qc_style, anomaly_style, protein_style
 
 
 @app.callback(Output("project", "options"), [Input("B_update", "n_clicks")])

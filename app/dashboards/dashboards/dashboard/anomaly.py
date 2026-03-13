@@ -358,6 +358,41 @@ def apply_anomaly_flag_changes(proposal, project, pipeline, user, n_clicks):
 def callbacks(app):
     min_samples_for_anomaly = 3
 
+    def _load_predictions_frame(predictions_payload):
+        if not predictions_payload:
+            return pd.DataFrame()
+        try:
+            return pd.read_json(predictions_payload, orient="split")
+        except ValueError:
+            return pd.read_json(predictions_payload)
+
+    def _rank_metrics_for_anomaly(df_shap, predictions_df):
+        if df_shap is None or df_shap.empty:
+            return pd.Index([])
+
+        shap_frame = df_shap.copy()
+        shap_frame.index = shap_frame.index.astype(str)
+        negative_only = -shap_frame.clip(upper=0)
+
+        anomaly_rows = pd.Index([])
+        if predictions_df is not None and not predictions_df.empty:
+            prediction_frame = predictions_df.copy()
+            prediction_frame.index = prediction_frame.index.astype(str)
+            if "Anomaly" in prediction_frame.columns:
+                anomaly_rows = prediction_frame.index[
+                    pd.to_numeric(prediction_frame["Anomaly"], errors="coerce").fillna(0).astype(int) == 1
+                ]
+                anomaly_rows = anomaly_rows.intersection(negative_only.index)
+
+        if len(anomaly_rows) > 0:
+            ranking_series = negative_only.loc[anomaly_rows].mean(axis=0)
+        else:
+            ranking_series = negative_only.mean(axis=0)
+            if not (ranking_series > 0).any():
+                ranking_series = shap_frame.abs().mean(axis=0)
+
+        return ranking_series.sort_values(ascending=False).index
+
     def _short_label(value, max_len=26):
         text = str(value)
         if len(text) <= max_len:
@@ -388,6 +423,7 @@ def callbacks(app):
         return f"{int(value or 0)}%"
 
     @app.callback(
+        Output("anomaly-predictions", "data"),
         Output("shapley-values", "children"),
         Output("anomaly-progress-probe", "children"),
         Output("anomaly-cache-key", "children"),
@@ -446,10 +482,10 @@ def callbacks(app):
         # Use already loaded QC scope data from dashboard state to avoid
         # secondary API calls that may fail auth-context checks.
         if qc_data.empty or "RawFile" not in qc_data.columns:
-            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
+            return None, None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
         sample_count = len(qc_data.index)
         if sample_count < min_samples_for_anomaly:
-            return None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key, None
+            return None, None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key, None
         index_col = "RunKey" if "RunKey" in qc_data.columns else "RawFile"
         qc_model = qc_data.set_index(index_col)
 
@@ -473,7 +509,7 @@ def callbacks(app):
             )
         except Exception as exc:
             logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
-            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
+            return None, None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
 
         proposal = compute_flag_proposals(qc_data, predictions, df_shap)
         proposal.update(
@@ -486,12 +522,13 @@ def callbacks(app):
             }
         )
 
-        payload = (
+        prediction_payload = predictions.to_json(orient="split")
+        shap_payload = (
             df_shap.to_json(orient="split")
             if df_shap is not None
             else None
         )
-        return payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key, proposal
+        return prediction_payload, shap_payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key, proposal
 
 
     @app.callback(
@@ -500,13 +537,14 @@ def callbacks(app):
         Output("anomaly-figure", "style"),
         Output("anomaly-empty-state", "children"),
         Output("anomaly-empty-state", "style"),
+        Input("anomaly-predictions", "data"),
         Input("shapley-values", "children"),
         Input("qc-scope-data", "data"),
         Input("tabs", "value"),
         Input("anomaly-row-order", "value"),
         Input("anomaly-metric-count", "value"),
     )
-    def plot_shapley(shapley_values, qc_data, tab, row_order, metric_count):
+    def plot_shapley(predictions_payload, shapley_values, qc_data, tab, row_order, metric_count):
         config = T.gen_figure_config(
             filename="Anomaly-Detection-Shapley-values",
             editable=False,
@@ -552,6 +590,7 @@ def callbacks(app):
             # Backward compatibility with cached payloads serialized
             # using pandas default orient.
             df_shap = pd.read_json(shapley_values)
+        predictions_df = _load_predictions_frame(predictions_payload)
 
         # samples on rows, QC metrics on columns
         row_keys = (
@@ -564,19 +603,22 @@ def callbacks(app):
             if "SampleLabel" in qc_data.columns
             else qc_data["RawFile"].astype(str)
         )
-        label_by_key = dict(zip(row_keys, row_labels))
         df_shap.index = df_shap.index.astype(str)
         df_shap = df_shap.reindex(row_keys).fillna(0)
-        df_shap.index = [label_by_key.get(key, key) for key in row_keys]
 
         if row_order == "anomalous_first":
             sample_rank = df_shap.abs().mean(axis=1).sort_values(ascending=False).index
             df_shap = df_shap.reindex(sample_rank)
 
-        if metric_count != "all":
+        metric_rank = _rank_metrics_for_anomaly(df_shap, predictions_df)
+        if metric_count == "all":
+            df_shap = df_shap.loc[:, metric_rank]
+        else:
             max_metrics = int(metric_count or 20)
-            metric_rank = df_shap.abs().mean(axis=0).sort_values(ascending=False).index
             df_shap = df_shap.loc[:, metric_rank[:max_metrics]]
+
+        label_by_key = dict(zip(row_keys, row_labels))
+        df_shap.index = [label_by_key.get(key, key) for key in df_shap.index]
 
         df_plot = df_shap.copy()
         df_plot.index = [_short_label_keep_ends(v, max_len=30, tail_len=8) for v in df_plot.index]
@@ -724,6 +766,7 @@ def callbacks(app):
     @app.callback(
         Output("anomaly-download", "data"),
         Input("anomaly-download-btn", "n_clicks"),
+        State("anomaly-predictions", "data"),
         State("shapley-values", "children"),
         State("qc-scope-data", "data"),
         State("anomaly-row-order", "value"),
@@ -734,6 +777,7 @@ def callbacks(app):
     )
     def download_anomaly_data(
         n_clicks,
+        predictions_payload,
         shapley_values,
         scope_data,
         row_order,
@@ -755,6 +799,7 @@ def callbacks(app):
             df_shap = pd.read_json(shapley_values, orient="split")
         except ValueError:
             df_shap = pd.read_json(shapley_values)
+        predictions_df = _load_predictions_frame(predictions_payload)
 
         # Build labeled index (same logic as the plot callback)
         row_keys = (
@@ -767,18 +812,21 @@ def callbacks(app):
             if "SampleLabel" in qc_data.columns
             else qc_data["RawFile"].astype(str)
         )
-        label_by_key = dict(zip(row_keys, row_labels))
         df_shap.index = df_shap.index.astype(str)
         df_shap = df_shap.reindex(row_keys).fillna(0)
 
-        # Add anomaly label column from proposal
         anomaly_keys = set()
-        if proposal:
+        if not predictions_df.empty and "Anomaly" in predictions_df.columns:
+            prediction_frame = predictions_df.copy()
+            prediction_frame.index = prediction_frame.index.astype(str)
+            anomaly_keys = set(
+                prediction_frame.index[
+                    pd.to_numeric(prediction_frame["Anomaly"], errors="coerce").fillna(0).astype(int) == 1
+                ].tolist()
+            )
+        elif proposal:
             anomaly_keys = set(proposal.get("run_keys_to_flag") or [])
-        df_shap["__anomaly_label__"] = [
-            "Anomaly" if key in anomaly_keys else "Normal"
-            for key in row_keys
-        ]
+        df_shap["__anomaly_label__"] = ["Anomaly" if key in anomaly_keys else "Normal" for key in row_keys]
 
         df_shap.index = [label_by_key.get(key, key) for key in row_keys]
 
@@ -786,14 +834,18 @@ def callbacks(app):
             sample_rank = df_shap.drop(columns=["__anomaly_label__"]).abs().mean(axis=1).sort_values(ascending=False).index
             df_shap = df_shap.reindex(sample_rank)
 
-        if metric_count != "all":
+        shap_cols = [c for c in df_shap.columns if c != "__anomaly_label__"]
+        metric_rank = _rank_metrics_for_anomaly(df_shap[shap_cols], predictions_df)
+        if metric_count == "all":
+            keep = list(metric_rank)
+        else:
             max_metrics = int(metric_count or 20)
-            shap_cols = [c for c in df_shap.columns if c != "__anomaly_label__"]
-            metric_rank = df_shap[shap_cols].abs().mean(axis=0).sort_values(ascending=False).index
             keep = list(metric_rank[:max_metrics])
-            if "__anomaly_label__" not in keep:
-                keep.append("__anomaly_label__")
-            df_shap = df_shap.loc[:, keep]
+        keep.append("__anomaly_label__")
+        df_shap = df_shap.loc[:, keep]
+
+        label_by_key = dict(zip(row_keys, row_labels))
+        df_shap.index = [label_by_key.get(key, key) for key in df_shap.index]
 
         # Extract anomaly labels, then drop the helper column
         anomaly_labels = df_shap.pop("__anomaly_label__")
