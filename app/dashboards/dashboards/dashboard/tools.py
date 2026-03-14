@@ -932,10 +932,18 @@ def detect_anomalies(
     normalized_max_features = _normalize_max_features(max_features, len(selected_cols))
     if normalized_max_features is not None:
         model_kws["max_features"] = normalized_max_features
-    if "contamination" not in model_kws:
-        contamination = fraction if fraction is not None else percentage
-        if contamination is not None:
-            model_kws["contamination"] = float(contamination)
+    requested_fraction = model_kws.pop("fraction", None)
+    if requested_fraction is None and "contamination" in model_kws:
+        requested_fraction = model_kws.pop("contamination")
+    if requested_fraction is None:
+        requested_fraction = fraction if fraction is not None else percentage
+    if requested_fraction is not None:
+        requested_fraction = float(requested_fraction)
+        if requested_fraction <= 0:
+            requested_fraction = np.nextafter(0.0, 1.0)
+        elif requested_fraction >= 1:
+            requested_fraction = np.nextafter(1.0, 0.0)
+        model_kws["fraction"] = requested_fraction
     log_cols = [
         "Ms1MedianSummedIntensity",
         "Ms2MedianSummedIntensity",

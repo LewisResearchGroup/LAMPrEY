@@ -7,6 +7,7 @@ from django.test import SimpleTestCase, TestCase
 import dash
 import pandas as pd
 
+from dashboards.dashboards.dashboard import anomaly
 from dashboards.dashboards.dashboard.anomaly import (
     _available_anomaly_columns,
     apply_anomaly_flag_changes,
@@ -36,6 +37,17 @@ from user.models import User
 
 
 class DashboardToolsTestCase(SimpleTestCase):
+    class _CallbackApp:
+        def __init__(self):
+            self.callbacks = {}
+
+        def callback(self, *_args, **_kwargs):
+            def decorator(func):
+                self.callbacks[func.__name__] = func
+                return func
+
+            return decorator
+
     def test__dashboard_helpers_extract_rows_and_errors(self):
         payload = {
             "rows": [{"RawFile": "a.raw"}],
@@ -234,8 +246,62 @@ class DashboardToolsTestCase(SimpleTestCase):
         self.assertEqual(
             mock_create_model.call_args.kwargs["random_state"], ANOMALY_SESSION_ID
         )
+        self.assertEqual(mock_create_model.call_args.kwargs["fraction"], 0.05)
+        self.assertNotIn("contamination", mock_create_model.call_args.kwargs)
         self.assertEqual(predictions["Anomaly"].tolist(), [0, 1, 0])
         self.assertEqual(list(shap_values.columns), ["MetricB", "MetricA"])
+
+    @patch("dashboards.dashboards.dashboard.tools.ShapAnalysis")
+    @patch("dashboards.dashboards.dashboard.tools.predict_model")
+    @patch("dashboards.dashboards.dashboard.tools.get_config")
+    @patch("dashboards.dashboards.dashboard.tools.create_model")
+    @patch("dashboards.dashboards.dashboard.tools.setup")
+    def test__detect_anomalies_clamps_fraction_at_upper_bound(
+        self,
+        mock_setup,
+        mock_create_model,
+        mock_get_config,
+        mock_predict_model,
+        mock_shap_analysis,
+    ):
+        class _Pipeline:
+            def transform(self, df):
+                return df.copy()
+
+        qc_data = pd.DataFrame(
+            {
+                "Use Downstream": [True, True, True],
+                "MetricA": [1.0, 2.0, 3.0],
+                "MetricB": [4.0, 5.0, 6.0],
+            },
+            index=["rf1", "rf2", "rf3"],
+        )
+        mock_create_model.return_value = object()
+        mock_get_config.return_value = _Pipeline()
+        mock_predict_model.return_value = pd.DataFrame(
+            {
+                "Anomaly": [1, 1, 0],
+                "Anomaly_Score": [0.9, 0.8, 0.1],
+            },
+            index=qc_data.index,
+        )
+        mock_shap_analysis.return_value.df_shap = pd.DataFrame(
+            {
+                "MetricB": [0.3, 0.2, 0.1],
+                "MetricA": [0.1, 0.4, 0.2],
+            },
+            index=qc_data.index,
+        )
+
+        detect_anomalies(
+            qc_data,
+            algorithm="iforest",
+            columns=["MetricA", "MetricB"],
+            fraction=1.0,
+        )
+
+        self.assertLess(mock_create_model.call_args.kwargs["fraction"], 1.0)
+        self.assertGreater(mock_create_model.call_args.kwargs["fraction"], 0.0)
 
     def test__normalize_max_features_caps_integer_values(self):
         assert _normalize_max_features(10, 4) == 4
@@ -316,6 +382,91 @@ class DashboardToolsTestCase(SimpleTestCase):
             ],
         )
         self.assertEqual(qc_data["Flagged"].tolist(), [False, True])
+
+    def test__compute_flag_proposals_skips_runs_already_flagged_as_anomalies(self):
+        qc_data = pd.DataFrame(
+            [
+                {
+                    "RunKey": "rf-demo-1",
+                    "RawFile": "DEMO_01",
+                    "SampleLabel": "DEMO_01",
+                    "Flagged": True,
+                },
+                {
+                    "RunKey": "rf-demo-2",
+                    "RawFile": "DEMO_02",
+                    "SampleLabel": "DEMO_02",
+                    "Flagged": False,
+                },
+            ]
+        )
+        predictions = pd.DataFrame(
+            {"Anomaly": [1, 1], "Anomaly_Score": [0.95, 0.81]},
+            index=["rf-demo-1", "rf-demo-2"],
+        )
+
+        proposal = compute_flag_proposals(qc_data, predictions)
+
+        self.assertEqual(proposal["run_keys_to_flag"], ["rf-demo-2"])
+        self.assertEqual(proposal["run_keys_to_unflag"], [])
+        self.assertEqual(proposal["run_keys_already_flagged"], ["rf-demo-1"])
+        self.assertEqual(
+            [row["run_key"] for row in proposal["preview_rows"]],
+            ["rf-demo-2"],
+        )
+        self.assertEqual(
+            [row["run_key"] for row in proposal["already_flagged_rows"]],
+            ["rf-demo-1"],
+        )
+
+    def test__download_anomaly_data_uses_sample_labels_without_name_error(self):
+        app = self._CallbackApp()
+        anomaly.callbacks(app)
+        download_anomaly_data = app.callbacks["download_anomaly_data"]
+
+        qc_scope = {
+            "rows": [
+                {
+                    "RunKey": "rf1",
+                    "RawFile": "DEMO_01",
+                    "SampleLabel": "DEMO_01",
+                    "Flagged": False,
+                },
+                {
+                    "RunKey": "rf2",
+                    "RawFile": "DEMO_02",
+                    "SampleLabel": "DEMO_02",
+                    "Flagged": False,
+                },
+            ]
+        }
+        predictions_payload = pd.DataFrame(
+            {"Anomaly": [1, 0], "Anomaly_Score": [0.91, 0.11]},
+            index=["rf1", "rf2"],
+        ).to_json(orient="split")
+        shapley_values = pd.DataFrame(
+            {
+                "metric_a": [-0.2, 0.1],
+                "metric_b": [-0.1, 0.2],
+            },
+            index=["rf1", "rf2"],
+        ).to_json(orient="split")
+
+        result = download_anomaly_data(
+            1,
+            predictions_payload,
+            shapley_values,
+            qc_scope,
+            "input",
+            20,
+            None,
+            "demo-project",
+            "demo-pipeline",
+        )
+
+        self.assertEqual(result["filename"], "anomaly-demo-project-demo-pipeline.zip")
+        archive = result["content"]
+        self.assertTrue(archive)
 
     def test__available_anomaly_columns_excludes_redundant_feature_families(self):
         df = pd.DataFrame(
@@ -463,9 +614,10 @@ class DashboardToolsTestCase(SimpleTestCase):
         )
 
         self.assertEqual(result[0], "1")
-        self.assertEqual(result[1], "100")
-        self.assertEqual(result[2], "200")
-        self.assertEqual(result[3], "55.0%")
+        self.assertEqual(result[1], "0")
+        self.assertEqual(result[2], "100")
+        self.assertEqual(result[3], "200")
+        self.assertEqual(result[4], "55.0%")
 
 
 class DashboardRawFileActionTestCase(TestCase):

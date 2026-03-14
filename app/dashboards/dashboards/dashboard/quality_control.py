@@ -208,6 +208,8 @@ layout = html.Div(
 def callbacks(app):
     highlight_marker_color = "#ef4444"
     highlight_marker_line_color = "#7f1d1d"
+    flagged_marker_color = "#f59e0b"
+    flagged_marker_line_color = "#92400e"
 
     def _sample_label_series(df):
         if "SampleLabel" in df.columns:
@@ -261,6 +263,23 @@ def callbacks(app):
             return {key: value for key, value in details.items() if key in available}
         return {}
 
+    def _flagged_details(df):
+        if df.empty or "Flagged" not in df.columns:
+            return {}
+        flagged = df["Flagged"].fillna(False).astype(bool)
+        if not flagged.any():
+            return {}
+        key_series = (
+            df["RunKey"].astype(str)
+            if "RunKey" in df.columns
+            else df["RawFile"].astype(str)
+        )
+        sample_labels = _sample_label_series(df)
+        details = {}
+        for run_key, sample_label in zip(key_series[flagged], sample_labels[flagged]):
+            details[str(run_key)] = {"sample_label": str(sample_label)}
+        return details
+
     @app.callback(
         Output("qc-figure", "figure"),
         Output("qc-figure", "config"),
@@ -300,6 +319,8 @@ def callbacks(app):
 
         highlight_details = _highlight_details(data_in, anomaly_proposal, df)
         highlight_run_keys = set(highlight_details.keys())
+        flagged_details = _flagged_details(df)
+        flagged_run_keys = set(flagged_details.keys())
 
         if x not in df.columns:
             x = "Index" if "Index" in df.columns else "RawFile"
@@ -416,6 +437,38 @@ def callbacks(app):
                     )
                 ]
                 highlight_mask = long_df["run_key"].isin(highlight_run_keys)
+                flagged_mask = long_df["run_key"].isin(flagged_run_keys)
+                flagged_mask = flagged_mask & ~highlight_mask
+                if flagged_mask.any():
+                    flagged_hovertext = []
+                    for _, flagged_row in long_df.loc[flagged_mask].iterrows():
+                        detail = flagged_details.get(str(flagged_row["run_key"]), {})
+                        sample_label = detail.get("sample_label") or flagged_row["sample_label"]
+                        flagged_hovertext.append(
+                            f"{flagged_row['x_label']}<br>{sample_label}<br>Already manually flagged"
+                        )
+                    figure_data.append(
+                        go.Scatter(
+                            x=long_df.loc[flagged_mask, "x_pos"],
+                            y=long_df.loc[flagged_mask, "value"],
+                            mode="markers",
+                            showlegend=False,
+                            marker=dict(
+                                size=9,
+                                color=flagged_marker_color,
+                                symbol="diamond",
+                                line=dict(width=1.2, color=flagged_marker_line_color),
+                            ),
+                            hovertext=flagged_hovertext,
+                            customdata=long_df.loc[flagged_mask, "run_idx"],
+                            hovertemplate=(
+                                "<b>%{hovertext}</b><br>"
+                                + f"{metric_label}: "
+                                + "%{y:.0f}<br>"
+                                + "Already manually flagged<extra></extra>"
+                            ),
+                        )
+                    )
                 if highlight_mask.any():
                     hovertext = []
                     for _, highlight_row in long_df.loc[highlight_mask].iterrows():
@@ -546,6 +599,51 @@ def callbacks(app):
             if "RunKey" in df.columns
             else raw_labels.isin(highlight_run_keys)
         )
+        flagged_series = (
+            df["RunKey"].astype(str).isin(flagged_run_keys)
+            if "RunKey" in df.columns
+            else raw_labels.isin(flagged_run_keys)
+        )
+        flagged_series = flagged_series & ~highlight_series
+        if flagged_series.any():
+            flagged_hovertext = []
+            if "RunKey" in df.columns:
+                flagged_keys = df.loc[flagged_series, "RunKey"].astype(str)
+            else:
+                flagged_keys = raw_labels[flagged_series].astype(str)
+            for run_key, label, acquired_value in zip(
+                flagged_keys,
+                sample_labels[flagged_series],
+                acquired[flagged_series],
+            ):
+                detail = flagged_details.get(str(run_key), {})
+                sample_label = detail.get("sample_label") or label
+                flagged_hovertext.append(
+                    f"{sample_label}<br>{acquired_value}<br>Already manually flagged"
+                )
+            figure_data.append(
+                go.Scatter(
+                    x=x_values[flagged_series],
+                    y=y_series[flagged_series],
+                    mode="markers",
+                    showlegend=False,
+                    marker=dict(
+                        size=11,
+                        color=flagged_marker_color,
+                        symbol="diamond",
+                        line=dict(width=1.6, color=flagged_marker_line_color),
+                    ),
+                    customdata=df.index[flagged_series].to_list(),
+                    hovertext=flagged_hovertext,
+                    text=None if x == "RawFile" else sample_labels[flagged_series],
+                    hovertemplate=(
+                        "<b>%{hovertext}</b><br>"
+                        + f"{metric_label}: "
+                        + f"%{{y:{y_hover_format}}}<br>"
+                        + "Already manually flagged<extra></extra>"
+                    ),
+                )
+            )
         if highlight_series.any():
             highlight_hovertext = []
             if "RunKey" in df.columns:

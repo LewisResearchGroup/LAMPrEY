@@ -4,6 +4,7 @@ import io
 import json
 import hashlib
 import zipfile
+import logging
 import pandas as pd
 
 import dash
@@ -109,12 +110,12 @@ layout = html.Div(
                                     id="anomaly-fraction",
                                     value=5,
                                     min=1,
-                                    max=100,
+                                    max=50,
                                     step=1,
                                     marks={
                                         1: {"label": "1%"},
+                                        25: {"label": "25%"},
                                         50: {"label": "50%"},
-                                        100: {"label": "100%"},
                                     },
                                     tooltip={"placement": "bottom", "always_visible": False},
                                 ),
@@ -242,7 +243,9 @@ def compute_flag_proposals(qc_data, predictions, shap_values=None):
         return {
             "run_keys_to_flag": [],
             "run_keys_to_unflag": [],
+            "run_keys_already_flagged": [],
             "preview_rows": [],
+            "already_flagged_rows": [],
         }
 
     frame = qc_data.copy()
@@ -268,8 +271,12 @@ def compute_flag_proposals(qc_data, predictions, shap_values=None):
     run_keys_to_unflag = [
         key for key in prediction_index[normal_mask].tolist() if key in currently_flagged
     ]
+    run_keys_already_flagged = [
+        key for key in prediction_index[anomaly_mask].tolist() if key in currently_flagged
+    ]
 
     preview_rows = []
+    already_flagged_rows = []
     for action, keys in (("flag", run_keys_to_flag), ("unflag", run_keys_to_unflag)):
         for key in keys:
             row = frame.loc[frame[index_col] == key].iloc[0]
@@ -286,10 +293,26 @@ def compute_flag_proposals(qc_data, predictions, shap_values=None):
                 )
             preview_rows.append(preview_row)
 
+    for key in run_keys_already_flagged:
+        row = frame.loc[frame[index_col] == key].iloc[0]
+        flagged_row = {
+            "run_key": key,
+            "sample_label": row[label_col],
+            "raw_file": row.get("RawFile", row[label_col]),
+            "current_flagged": True,
+        }
+        if shap_values is not None:
+            flagged_row["top_contributors"] = _top_anomaly_contributors(
+                key, shap_values
+            )
+        already_flagged_rows.append(flagged_row)
+
     return {
         "run_keys_to_flag": run_keys_to_flag,
         "run_keys_to_unflag": run_keys_to_unflag,
+        "run_keys_already_flagged": run_keys_already_flagged,
         "preview_rows": preview_rows,
+        "already_flagged_rows": already_flagged_rows,
     }
 
 
@@ -420,7 +443,8 @@ def callbacks(app):
         Input("anomaly-fraction", "value"),
     )
     def render_fraction_value(value):
-        return f"{int(value or 0)}%"
+        value = min(max(int(value or 5), 1), 50)
+        return f"{value}%"
 
     @app.callback(
         Output("anomaly-predictions", "data"),
@@ -453,7 +477,8 @@ def callbacks(app):
         if not scope_data:
             raise PreventUpdate
 
-        fraction = (fraction_in or 5) / 100.0
+        fraction_pct = min(max(int(fraction_in or 5), 1), 50)
+        fraction = fraction_pct / 100.0
         algorithm = "iforest"
         # Cache against the current scope payload itself, not just the selected
         # project/pipeline parameters, so a changed sample set forces recompute.
@@ -464,7 +489,7 @@ def callbacks(app):
             {
                 "project": project,
                 "pipeline": pipeline,
-                "fraction": int(fraction_in or 5),
+                "fraction": fraction_pct,
                 "columns": sorted(model_columns),
                 "scope_sig": scope_sig,
                 "algorithm": algorithm,
@@ -482,10 +507,16 @@ def callbacks(app):
         # Use already loaded QC scope data from dashboard state to avoid
         # secondary API calls that may fail auth-context checks.
         if qc_data.empty or "RawFile" not in qc_data.columns:
-            return None, None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
+            return None, None, "No anomaly plot data available for this scope.", cache_key, None
         sample_count = len(qc_data.index)
         if sample_count < min_samples_for_anomaly:
-            return None, None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key, None
+            return (
+                None,
+                None,
+                f"Anomaly detection requires at least {min_samples_for_anomaly} samples. Current selection has {sample_count}.",
+                cache_key,
+                None,
+            )
         index_col = "RunKey" if "RunKey" in qc_data.columns else "RawFile"
         qc_model = qc_data.set_index(index_col)
 
@@ -509,14 +540,20 @@ def callbacks(app):
             )
         except Exception as exc:
             logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
-            return None, None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
+            return (
+                None,
+                None,
+                f"Anomaly detection could not run for this scope: {exc}",
+                cache_key,
+                None,
+            )
 
         proposal = compute_flag_proposals(qc_data, predictions, df_shap)
         proposal.update(
             {
                 "project": project,
                 "pipeline": pipeline,
-                "fraction": int(fraction_in or 5),
+                "fraction": fraction_pct,
                 "scope_sig": scope_sig,
                 "cache_key": cache_key,
             }
@@ -528,7 +565,7 @@ def callbacks(app):
             if df_shap is not None
             else None
         )
-        return prediction_payload, shap_payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key, proposal
+        return prediction_payload, shap_payload, f"updated-{project}-{pipeline}-{fraction_pct}", cache_key, proposal
 
 
     @app.callback(
@@ -539,12 +576,13 @@ def callbacks(app):
         Output("anomaly-empty-state", "style"),
         Input("anomaly-predictions", "data"),
         Input("shapley-values", "children"),
+        Input("anomaly-progress-probe", "children"),
         Input("qc-scope-data", "data"),
         Input("tabs", "value"),
         Input("anomaly-row-order", "value"),
         Input("anomaly-metric-count", "value"),
     )
-    def plot_shapley(predictions_payload, shapley_values, qc_data, tab, row_order, metric_count):
+    def plot_shapley(predictions_payload, shapley_values, progress_message, qc_data, tab, row_order, metric_count):
         config = T.gen_figure_config(
             filename="Anomaly-Detection-Shapley-values",
             editable=False,
@@ -582,7 +620,12 @@ def callbacks(app):
                 {"display": "flex"},
             )
         if shapley_values is None:
-            return {}, config, hidden_graph_style, default_empty_message, {"display": "flex"}
+            message = (
+                progress_message
+                if isinstance(progress_message, str) and progress_message and not progress_message.startswith("updated-")
+                else default_empty_message
+            )
+            return {}, config, hidden_graph_style, message, {"display": "flex"}
 
         try:
             df_shap = pd.read_json(shapley_values, orient="split")
@@ -603,6 +646,7 @@ def callbacks(app):
             if "SampleLabel" in qc_data.columns
             else qc_data["RawFile"].astype(str)
         )
+        label_by_key = dict(zip(row_keys, row_labels))
         df_shap.index = df_shap.index.astype(str)
         df_shap = df_shap.reindex(row_keys).fillna(0)
 
@@ -701,11 +745,23 @@ def callbacks(app):
         Output("anomaly-preview-details", "children"),
         Output("anomaly-apply", "disabled"),
         Input("anomaly-proposed-flags", "data"),
+        Input("anomaly-progress-probe", "children"),
         Input("tabs", "value"),
     )
-    def render_proposed_flag_changes(proposal, tab):
+    def render_proposed_flag_changes(proposal, progress_message, tab):
         if tab != "anomaly":
             raise PreventUpdate
+
+        if (
+            isinstance(progress_message, str)
+            and progress_message
+            and not progress_message.startswith("updated-")
+        ):
+            return (
+                "Preview unavailable.",
+                progress_message,
+                True,
+            )
 
         if not proposal:
             return (
@@ -715,10 +771,28 @@ def callbacks(app):
             )
 
         preview_rows = list(proposal.get("preview_rows") or [])
+        already_flagged_rows = list(proposal.get("already_flagged_rows") or [])
         n_flag = len(proposal.get("run_keys_to_flag") or [])
         n_unflag = len(proposal.get("run_keys_to_unflag") or [])
+        n_already_flagged = len(proposal.get("run_keys_already_flagged") or [])
         total = len(preview_rows)
         if total == 0:
+            if n_already_flagged > 0:
+                sample_labels = [
+                    str(row.get("sample_label") or row.get("run_key") or "sample")
+                    for row in already_flagged_rows[:3]
+                ]
+                suffix = ""
+                if n_already_flagged > 3:
+                    suffix = f" and {n_already_flagged - 3} more"
+                return (
+                    "The model found no new flag changes.",
+                    f"{n_already_flagged} predicted anomalous sample"
+                    f"{'' if n_already_flagged == 1 else 's'} "
+                    f"{'is' if n_already_flagged == 1 else 'are'} already manually flagged: "
+                    f"{', '.join(sample_labels)}{suffix}.",
+                    True,
+                )
             return (
                 "Preview only. The current anomaly model does not suggest any flag changes.",
                 "Manual flags are unchanged until you explicitly apply a proposal.",
@@ -735,12 +809,28 @@ def callbacks(app):
             preview_lines.append(html.Div(f"...and {total - 6} more proposed change(s)."))
 
         summary = (
-            f"Preview only: {n_flag} sample(s) would be flagged and "
-            f"{n_unflag} sample(s) would be unflagged."
+            f"Preview only: {n_flag} sample(s) would be flagged"
         )
+        if n_already_flagged > 0:
+            sample_labels = [
+                str(row.get("sample_label") or row.get("run_key") or "sample")
+                for row in already_flagged_rows[:3]
+            ]
+            already_flagged_note = (
+                f"{n_already_flagged} predicted anomalous sample"
+                f"{'' if n_already_flagged == 1 else 's'} "
+                f"{'is' if n_already_flagged == 1 else 'are'} already manually flagged: "
+                f"{', '.join(sample_labels)}"
+            )
+            if n_already_flagged > 3:
+                already_flagged_note += f" and {n_already_flagged - 3} more"
+            already_flagged_note += "."
+        else:
+            already_flagged_note = None
         details = html.Div(
             [
                 html.Div(preview_lines),
+                html.Div(already_flagged_note) if already_flagged_note else None,
             ]
         )
         return summary, details, False
@@ -812,6 +902,7 @@ def callbacks(app):
             if "SampleLabel" in qc_data.columns
             else qc_data["RawFile"].astype(str)
         )
+        label_by_key = dict(zip(row_keys, row_labels))
         df_shap.index = df_shap.index.astype(str)
         df_shap = df_shap.reindex(row_keys).fillna(0)
 
@@ -844,7 +935,6 @@ def callbacks(app):
         keep.append("__anomaly_label__")
         df_shap = df_shap.loc[:, keep]
 
-        label_by_key = dict(zip(row_keys, row_labels))
         df_shap.index = [label_by_key.get(key, key) for key in df_shap.index]
 
         # Extract anomaly labels, then drop the helper column
