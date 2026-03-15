@@ -30,11 +30,12 @@ class QueueExistingRunTestCase(TestCase):
             mqpar_file=SimpleUploadedFile("queue.xml", contents_mqpar),
             rawtools_args="-p -q -x",
         )
-        self.raw_file = RawFile.objects.create(
-            pipeline=self.pipeline,
-            orig_file=SimpleUploadedFile("queue.raw", b"..."),
-            created_by=self.user,
-        )
+        with patch.object(Result, "run"):
+            self.raw_file = RawFile.objects.create(
+                pipeline=self.pipeline,
+                orig_file=SimpleUploadedFile("queue.raw", b"..."),
+                created_by=self.user,
+            )
         self.result = Result.objects.get(raw_file=self.raw_file)
         self.client.force_login(self.user)
 
