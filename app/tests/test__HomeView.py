@@ -57,7 +57,7 @@ class HomeViewTestCase(TestCase):
         # Verify quick steps are populated
         quick_steps = response.context["quick_steps"]
         self.assertEqual(len(quick_steps), 4)
-        self.assertEqual(quick_steps[0]["title"], "Open projects")
+        self.assertEqual(quick_steps[0]["title"], "Open main")
 
     def test_home_post_logs_in_anonymous_user(self):
         url = reverse("home")
