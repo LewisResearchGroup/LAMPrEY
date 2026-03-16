@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
-DEFAULT_RAWTOOLS_ARGS = "-p -q -x -u -l -m -r TMT11 -chro 12TB"
+DEFAULT_RAWTOOLS_ARGS = "-p -x -u -l -m -chro 12TB"
 RAWTOOLS_BOOLEAN_FLAGS = {"-p", "-q", "-x", "-u", "-l", "-m"}
 RAWTOOLS_VALUE_FLAGS = {"-r", "-chro"}
 RAWTOOLS_ALLOWED_FLAGS = RAWTOOLS_BOOLEAN_FLAGS | RAWTOOLS_VALUE_FLAGS

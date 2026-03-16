@@ -168,7 +168,7 @@ def home(request):
         quick_steps = [
             {
                 "index": 1,
-                "title": "Open projects",
+                "title": "Open main",
                 "note": step_1_note,
                 "url": step_1_url,
             },

@@ -7,7 +7,9 @@ from django.test import SimpleTestCase, TestCase
 import dash
 import pandas as pd
 
+from dashboards.dashboards.dashboard import anomaly
 from dashboards.dashboards.dashboard.anomaly import (
+    _available_anomaly_columns,
     apply_anomaly_flag_changes,
     compute_flag_proposals,
 )
@@ -17,6 +19,7 @@ from dashboards.dashboards.dashboard.index import (
     update_kpis,
 )
 from dashboards.dashboards.dashboard.tools import (
+    ANOMALY_SESSION_ID,
     _normalize_max_features,
     _iter_selected_results,
     dashboard_result_data,
@@ -34,6 +37,17 @@ from user.models import User
 
 
 class DashboardToolsTestCase(SimpleTestCase):
+    class _CallbackApp:
+        def __init__(self):
+            self.callbacks = {}
+
+        def callback(self, *_args, **_kwargs):
+            def decorator(func):
+                self.callbacks[func.__name__] = func
+                return func
+
+            return decorator
+
     def test__dashboard_helpers_extract_rows_and_errors(self):
         payload = {
             "rows": [{"RawFile": "a.raw"}],
@@ -228,8 +242,66 @@ class DashboardToolsTestCase(SimpleTestCase):
 
         df_train = mock_setup.call_args.args[0]
         self.assertEqual(len(df_train.index), 3)
+        self.assertEqual(mock_setup.call_args.kwargs["session_id"], ANOMALY_SESSION_ID)
+        self.assertEqual(
+            mock_create_model.call_args.kwargs["random_state"], ANOMALY_SESSION_ID
+        )
+        self.assertEqual(mock_create_model.call_args.kwargs["fraction"], 0.05)
+        self.assertNotIn("contamination", mock_create_model.call_args.kwargs)
         self.assertEqual(predictions["Anomaly"].tolist(), [0, 1, 0])
         self.assertEqual(list(shap_values.columns), ["MetricB", "MetricA"])
+
+    @patch("dashboards.dashboards.dashboard.tools.ShapAnalysis")
+    @patch("dashboards.dashboards.dashboard.tools.predict_model")
+    @patch("dashboards.dashboards.dashboard.tools.get_config")
+    @patch("dashboards.dashboards.dashboard.tools.create_model")
+    @patch("dashboards.dashboards.dashboard.tools.setup")
+    def test__detect_anomalies_clamps_fraction_at_upper_bound(
+        self,
+        mock_setup,
+        mock_create_model,
+        mock_get_config,
+        mock_predict_model,
+        mock_shap_analysis,
+    ):
+        class _Pipeline:
+            def transform(self, df):
+                return df.copy()
+
+        qc_data = pd.DataFrame(
+            {
+                "Use Downstream": [True, True, True],
+                "MetricA": [1.0, 2.0, 3.0],
+                "MetricB": [4.0, 5.0, 6.0],
+            },
+            index=["rf1", "rf2", "rf3"],
+        )
+        mock_create_model.return_value = object()
+        mock_get_config.return_value = _Pipeline()
+        mock_predict_model.return_value = pd.DataFrame(
+            {
+                "Anomaly": [1, 1, 0],
+                "Anomaly_Score": [0.9, 0.8, 0.1],
+            },
+            index=qc_data.index,
+        )
+        mock_shap_analysis.return_value.df_shap = pd.DataFrame(
+            {
+                "MetricB": [0.3, 0.2, 0.1],
+                "MetricA": [0.1, 0.4, 0.2],
+            },
+            index=qc_data.index,
+        )
+
+        detect_anomalies(
+            qc_data,
+            algorithm="iforest",
+            columns=["MetricA", "MetricB"],
+            fraction=1.0,
+        )
+
+        self.assertLess(mock_create_model.call_args.kwargs["fraction"], 1.0)
+        self.assertGreater(mock_create_model.call_args.kwargs["fraction"], 0.0)
 
     def test__normalize_max_features_caps_integer_values(self):
         assert _normalize_max_features(10, 4) == 4
@@ -311,6 +383,179 @@ class DashboardToolsTestCase(SimpleTestCase):
         )
         self.assertEqual(qc_data["Flagged"].tolist(), [False, True])
 
+    def test__compute_flag_proposals_skips_runs_already_flagged_as_anomalies(self):
+        qc_data = pd.DataFrame(
+            [
+                {
+                    "RunKey": "rf-demo-1",
+                    "RawFile": "DEMO_01",
+                    "SampleLabel": "DEMO_01",
+                    "Flagged": True,
+                },
+                {
+                    "RunKey": "rf-demo-2",
+                    "RawFile": "DEMO_02",
+                    "SampleLabel": "DEMO_02",
+                    "Flagged": False,
+                },
+            ]
+        )
+        predictions = pd.DataFrame(
+            {"Anomaly": [1, 1], "Anomaly_Score": [0.95, 0.81]},
+            index=["rf-demo-1", "rf-demo-2"],
+        )
+
+        proposal = compute_flag_proposals(qc_data, predictions)
+
+        self.assertEqual(proposal["run_keys_to_flag"], ["rf-demo-2"])
+        self.assertEqual(proposal["run_keys_to_unflag"], [])
+        self.assertEqual(proposal["run_keys_already_flagged"], ["rf-demo-1"])
+        self.assertEqual(
+            [row["run_key"] for row in proposal["preview_rows"]],
+            ["rf-demo-2"],
+        )
+        self.assertEqual(
+            [row["run_key"] for row in proposal["already_flagged_rows"]],
+            ["rf-demo-1"],
+        )
+
+    def test__download_anomaly_data_uses_sample_labels_without_name_error(self):
+        app = self._CallbackApp()
+        anomaly.callbacks(app)
+        download_anomaly_data = app.callbacks["download_anomaly_data"]
+
+        qc_scope = {
+            "rows": [
+                {
+                    "RunKey": "rf1",
+                    "RawFile": "DEMO_01",
+                    "SampleLabel": "DEMO_01",
+                    "Flagged": False,
+                },
+                {
+                    "RunKey": "rf2",
+                    "RawFile": "DEMO_02",
+                    "SampleLabel": "DEMO_02",
+                    "Flagged": False,
+                },
+            ]
+        }
+        predictions_payload = pd.DataFrame(
+            {"Anomaly": [1, 0], "Anomaly_Score": [0.91, 0.11]},
+            index=["rf1", "rf2"],
+        ).to_json(orient="split")
+        shapley_values = pd.DataFrame(
+            {
+                "metric_a": [-0.2, 0.1],
+                "metric_b": [-0.1, 0.2],
+            },
+            index=["rf1", "rf2"],
+        ).to_json(orient="split")
+
+        result = download_anomaly_data(
+            1,
+            predictions_payload,
+            shapley_values,
+            qc_scope,
+            "input",
+            20,
+            None,
+            "demo-project",
+            "demo-pipeline",
+        )
+
+        self.assertEqual(result["filename"], "anomaly-demo-project-demo-pipeline.zip")
+        archive = result["content"]
+        self.assertTrue(archive)
+
+    def test__available_anomaly_columns_excludes_redundant_feature_families(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "MS/MS Submitted": 1000,
+                    "MS/MS Identified": 800,
+                    "MS/MS Identified [%]": 80.0,
+                    "N_protein_groups": 500,
+                    "N_protein_true_hits": 450,
+                    "N_protein_potential_contaminants": 30,
+                    "N_protein_reverse_seq": 20,
+                    "Protein_score_median": 12.0,
+                    "Protein_score_mean": 13.0,
+                    "Protein_qvalue_median": 0.001,
+                    "Protein_qvalue_lt_0_01 [%]": 97.0,
+                    "Protein_unique_peptides_median": 4,
+                    "Protein_razor_unique_peptides_median": 5,
+                    "Protein_unique_peptides_eq_1 [%]": 12.0,
+                    "Protein_msms_count_median": 6,
+                    "Peptide_score_median": 22.0,
+                    "Peptide_score_mean": 24.0,
+                    "Peptide_PEP_median": 0.0002,
+                    "Peptide_PEP_lt_0_01 [%]": 93.0,
+                    "N_peptides_last_amino_acid_K [%]": 40.0,
+                    "N_peptides_last_amino_acid_R [%]": 50.0,
+                    "N_peptides_last_amino_acid_other [%]": 10.0,
+                    "Uncalibrated - Calibrated m/z [ppm] (ave)": 1.2,
+                    "Uncalibrated - Calibrated m/z [Da] (ave)": 0.003,
+                    "PeakCapacity": 120.0,
+                    "Peak Width(ave)": 5.0,
+                    "MedianPeakWidthAt10%H(s)": 7.0,
+                    "MedianPeakWidthAt50%H(s)": 4.0,
+                    "TotalAnalysisTime(min)": 90.0,
+                    "NumMs2Scans": 10000,
+                    "NumMs1Scans": 1200,
+                    "MeanDutyCycle(s)": 1.4,
+                    "Ms2ScanRate(/s)": 12.0,
+                    "Day": 2,
+                    "Month": 1,
+                    "TMT1_missing_values": 14,
+                    "TMT1_peptide_count": 500,
+                    "TMT1_protein_group_count": 180,
+                }
+            ]
+        )
+
+        available = _available_anomaly_columns(df)
+
+        self.assertIn("MS/MS Identified [%]", available)
+        self.assertIn("N_protein_groups", available)
+        self.assertIn("N_protein_true_hits", available)
+        self.assertIn("Protein_score_median", available)
+        self.assertIn("Protein_qvalue_lt_0_01 [%]", available)
+        self.assertIn("Protein_unique_peptides_median", available)
+        self.assertIn("Protein_unique_peptides_eq_1 [%]", available)
+        self.assertIn("Peptide_score_median", available)
+        self.assertIn("Peptide_PEP_lt_0_01 [%]", available)
+        self.assertIn("N_peptides_last_amino_acid_K [%]", available)
+        self.assertIn("N_peptides_last_amino_acid_R [%]", available)
+        self.assertIn("Uncalibrated - Calibrated m/z [ppm] (ave)", available)
+        self.assertIn("PeakCapacity", available)
+        self.assertIn("MedianPeakWidthAt50%H(s)", available)
+        self.assertIn("TotalAnalysisTime(min)", available)
+        self.assertIn("NumMs2Scans", available)
+        self.assertIn("MeanDutyCycle(s)", available)
+        self.assertIn("TMT1_missing_values", available)
+
+        self.assertNotIn("MS/MS Submitted", available)
+        self.assertNotIn("MS/MS Identified", available)
+        self.assertNotIn("N_protein_potential_contaminants", available)
+        self.assertNotIn("N_protein_reverse_seq", available)
+        self.assertNotIn("Protein_score_mean", available)
+        self.assertNotIn("Protein_qvalue_median", available)
+        self.assertNotIn("Protein_razor_unique_peptides_median", available)
+        self.assertNotIn("Protein_msms_count_median", available)
+        self.assertNotIn("Peptide_score_mean", available)
+        self.assertNotIn("Peptide_PEP_median", available)
+        self.assertNotIn("N_peptides_last_amino_acid_other [%]", available)
+        self.assertNotIn("Uncalibrated - Calibrated m/z [Da] (ave)", available)
+        self.assertNotIn("Peak Width(ave)", available)
+        self.assertNotIn("MedianPeakWidthAt10%H(s)", available)
+        self.assertNotIn("NumMs1Scans", available)
+        self.assertNotIn("Ms2ScanRate(/s)", available)
+        self.assertNotIn("Day", available)
+        self.assertNotIn("Month", available)
+        self.assertNotIn("TMT1_peptide_count", available)
+        self.assertNotIn("TMT1_protein_group_count", available)
+
     @patch("dashboards.dashboards.dashboard.anomaly.T.set_rawfile_action")
     def test__apply_anomaly_flag_changes_applies_flag_and_unflag_actions(self, mock_action):
         mock_action.side_effect = [{"status": "success"}, {"status": "success"}]
@@ -369,7 +614,10 @@ class DashboardToolsTestCase(SimpleTestCase):
         )
 
         self.assertEqual(result[0], "1")
-        self.assertEqual(result[1], "100.0")
+        self.assertEqual(result[1], "0")
+        self.assertEqual(result[2], "100")
+        self.assertEqual(result[3], "200")
+        self.assertEqual(result[4], "55.0%")
 
 
 class DashboardRawFileActionTestCase(TestCase):
@@ -482,7 +730,7 @@ class DashboardRawFileActionTestCase(TestCase):
         }
         mock_get_pipeline_uploaders.return_value = {"status": "no_data", "data": []}
 
-        _table, scope_data, _uploaders, _scope_style, _scope_options, alert = refresh_qc_table(
+        _table, scope_data, _uploaders, _scope_style, _scope_options, _refresh_probe, alert = refresh_qc_table(
             self.project.slug,
             self.pipeline.slug,
             "__all__",

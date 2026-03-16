@@ -30,11 +30,12 @@ class QueueExistingRunTestCase(TestCase):
             mqpar_file=SimpleUploadedFile("queue.xml", contents_mqpar),
             rawtools_args="-p -q -x",
         )
-        self.raw_file = RawFile.objects.create(
-            pipeline=self.pipeline,
-            orig_file=SimpleUploadedFile("queue.raw", b"..."),
-            created_by=self.user,
-        )
+        with patch.object(Result, "run"):
+            self.raw_file = RawFile.objects.create(
+                pipeline=self.pipeline,
+                orig_file=SimpleUploadedFile("queue.raw", b"..."),
+                created_by=self.user,
+            )
         self.result = Result.objects.get(raw_file=self.raw_file)
         self.client.force_login(self.user)
 
@@ -120,7 +121,7 @@ class QueueExistingRunTestCase(TestCase):
 
 class ResultAutoRunSignalTestCase(TestCase):
     @patch.object(Result, "run")
-    def test_result_does_not_auto_run_when_pipeline_is_manual(self, mock_run):
+    def test_result_auto_runs_when_pipeline_is_manual(self, mock_run):
         user = User.objects.create_user(
             email="manual-run@example.com", password="pass1234"
         )
@@ -145,7 +146,7 @@ class ResultAutoRunSignalTestCase(TestCase):
             created_by=user,
         )
 
-        mock_run.assert_not_called()
+        mock_run.assert_called_once()
 
     @patch.object(Result, "run")
     def test_result_auto_runs_when_pipeline_is_automatic(self, mock_run):
@@ -174,3 +175,35 @@ class ResultAutoRunSignalTestCase(TestCase):
         )
 
         mock_run.assert_called_once()
+
+    @patch.object(Result, "run")
+    def test_demo_result_does_not_auto_run(self, mock_run):
+        user = User.objects.create_user(
+            email="demo-run@example.com", password="pass1234"
+        )
+        project = Project.objects.create(
+            name="Demo Queue Project",
+            description="Demo queue test project",
+            created_by=user,
+        )
+        pipeline = Pipeline.objects.create(
+            name="demo-queue-pipe",
+            project=project,
+            created_by=user,
+            run_automatically=False,
+            fasta_file=SimpleUploadedFile("demo.fasta", b">protein\nSEQUENCE"),
+            mqpar_file=SimpleUploadedFile("demo.xml", b"<mqpar></mqpar>"),
+            rawtools_args="-p -q -x",
+        )
+
+        raw_file = RawFile(
+            pipeline=pipeline,
+            orig_file=SimpleUploadedFile("demo.raw", b"..."),
+            created_by=user,
+        )
+        raw_file._skip_auto_result = True
+        raw_file.save()
+
+        Result.objects.create(raw_file=raw_file, input_source="demo", created_by=user)
+
+        mock_run.assert_not_called()

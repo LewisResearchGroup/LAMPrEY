@@ -1388,8 +1388,7 @@ def run_maxquant_after_save(sender, instance, created, *args, **kwargs):
     if created:
         if instance.input_source == "demo":
             return
-        if instance.pipeline.run_automatically:
-            instance.run()
+        instance.run()
         # Default new processed samples to be usable downstream; users can unmark later.
         if instance.raw_file.use_downstream is not True:
             instance.raw_file.use_downstream = True

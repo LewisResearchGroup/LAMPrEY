@@ -1,6 +1,6 @@
 # Demo data
 
-LAMPrEY ships with a seeded demo so a fresh installation is immediately usable after `make init` or `make init-local`.
+LAMPrEY ships with a seeded demo so a fresh installation is immediately usable after installation.
 
 The demo is created by the `bootstrap_demo` management command, which is invoked automatically during first-time setup.
 

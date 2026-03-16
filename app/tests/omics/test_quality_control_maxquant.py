@@ -1,8 +1,12 @@
 import pandas as pd
 import os
+import pytest
+import shutil
+import numbers
 
 from omics.proteomics.maxquant.quality_control import (
     maxquant_qc,
+    maxquant_qc_csv,
     maxquant_qc_summary,
     maxquant_qc_protein_groups,
     maxquant_qc_peptides,
@@ -11,6 +15,26 @@ from omics.proteomics.maxquant.quality_control import (
 )
 
 PATH = os.path.join("tests", "omics", "data", "maxquant", "tmt11", "example-0")
+
+
+def _write_tsv(path, filename, data):
+    pd.DataFrame(data).to_csv(os.path.join(path, filename), sep="\t", index=False)
+
+
+def _build_protein_groups(path, channels):
+    row = {
+        "Potential contaminant": None,
+        "Reverse": None,
+        "Majority protein IDs": "P00001",
+        "Only identified by site": None,
+        "Sequence coverage [%]": 50.0,
+        "Protein IDs": "P00001",
+        "Intensity": 1000.0,
+        "Peptide counts (all)": 5,
+    }
+    for ch in range(1, channels + 1):
+        row[f"Reporter intensity corrected {ch}"] = 0 if ch % 2 == 0 else 1000 + ch
+    _write_tsv(path, "proteinGroups.txt", [row])
 
 
 class TestMaxquantQualityControl:
@@ -57,6 +81,16 @@ class TestMaxquantQualityControl:
             "N_protein_potential_contaminants",
             "N_protein_reverse_seq",
             "Protein_mean_seq_cov [%]",
+            "Protein_score_median",
+            "Protein_score_mean",
+            "Protein_qvalue_median",
+            "Protein_qvalue_lt_0_01 [%]",
+            "Protein_peptides_median",
+            "Protein_unique_peptides_median",
+            "Protein_razor_unique_peptides_median",
+            "Protein_unique_peptides_eq_1 [%]",
+            "Protein_msms_count_median",
+            "Protein_unique_seq_cov_median [%]",
             "TMT1_missing_values",
             "TMT2_missing_values",
             "TMT3_missing_values",
@@ -68,12 +102,6 @@ class TestMaxquantQualityControl:
             "TMT9_missing_values",
             "TMT10_missing_values",
             "TMT11_missing_values",
-            "Protein_qc",
-            "N_of_Protein_qc_pepts",
-            "N_Protein_qc_missing_values",
-            "reporter_intensity_corrected_Protein_qc_ave",
-            "reporter_intensity_corrected_Protein_qc_sd",
-            "reporter_intensity_corrected_Protein_qc_cv",
         ]
 
         assert len(expected_ndx) - len(actual_ndx) == 0, (
@@ -88,6 +116,20 @@ class TestMaxquantQualityControl:
         assert (
             ~out.isnull().values.any()
         ), f"NaN value at {actual_ndx[out.isna().any()].tolist()}"
+
+    def test__maxquant_qc_protein_group_id_metrics(self):
+        out = maxquant_qc_protein_groups(PATH, protein=None)
+
+        assert out["Protein_score_median"] == pytest.approx(24.15, abs=0.01)
+        assert out["Protein_score_mean"] == pytest.approx(43.99, abs=0.01)
+        assert out["Protein_qvalue_median"] == pytest.approx(0.0, abs=1e-6)
+        assert out["Protein_qvalue_lt_0_01 [%]"] == pytest.approx(100.0, abs=0.01)
+        assert out["Protein_unique_peptides_eq_1 [%]"] == pytest.approx(28.81, abs=0.01)
+        assert out["Protein_unique_seq_cov_median [%]"] == pytest.approx(13.2, abs=0.01)
+        assert isinstance(out["Protein_peptides_median"], numbers.Integral)
+        assert isinstance(out["Protein_unique_peptides_median"], numbers.Integral)
+        assert isinstance(out["Protein_razor_unique_peptides_median"], numbers.Integral)
+        assert isinstance(out["Protein_msms_count_median"], numbers.Integral)
 
     def test__maxquant_qc_peptides(self):
         out = maxquant_qc_peptides(PATH)
@@ -107,6 +149,14 @@ class TestMaxquantQualityControl:
             "N_peptides_last_amino_acid_K [%]",
             "N_peptides_last_amino_acid_R [%]",
             "N_peptides_last_amino_acid_other [%]",
+            "Peptide_score_median",
+            "Peptide_score_mean",
+            "Peptide_PEP_median",
+            "Peptide_PEP_lt_0_01 [%]",
+            "Peptide_length_median",
+            "Peptide_msms_count_median",
+            "Peptide_unique_groups [%]",
+            "Peptide_unique_proteins [%]",
         ]
 
         assert len(expected_cols) - len(out.index) == 0, (
@@ -121,6 +171,19 @@ class TestMaxquantQualityControl:
         assert (
             ~out.isnull().values.any()
         ), f"NaN value at {out.index[out.isna().any()].tolist()}"
+
+    def test__maxquant_qc_peptide_id_metrics(self):
+        out = maxquant_qc_peptides(PATH)
+
+        assert out["Peptide_score_median"] == pytest.approx(127.92, abs=0.01)
+        assert out["Peptide_score_mean"] == pytest.approx(132.5, abs=0.01)
+        assert out["Peptide_PEP_median"] == pytest.approx(0.00008, abs=1e-6)
+        assert out["Peptide_PEP_lt_0_01 [%]"] == pytest.approx(88.43, abs=0.01)
+        assert out["Peptide_length_median"] == 11
+        assert out["Peptide_unique_groups [%]"] == pytest.approx(91.85, abs=0.01)
+        assert out["Peptide_unique_proteins [%]"] == pytest.approx(70.83, abs=0.01)
+        assert isinstance(out["Peptide_length_median"], numbers.Integral)
+        assert isinstance(out["Peptide_msms_count_median"], numbers.Integral)
 
     def test__maxquant_qc_msmScans(self):
         out = maxquant_qc_msmScans(PATH)
@@ -156,54 +219,6 @@ class TestMaxquantQualityControl:
             "Uncalibrated - Calibrated m/z [Da] (sd)",
             "Peak Width(ave)",
             "Peak Width (std)",
-            "qc1_peptide_charges",
-            "N_qc1_missing_values",
-            "reporter_intensity_corrected_qc1_ave",
-            "reporter_intensity_corrected_qc1_sd",
-            "reporter_intensity_corrected_qc1_cv",
-            "calibrated_retention_time_qc1",
-            "retention_length_qc1",
-            "N_of_scans_qc1",
-            "qc2_peptide_charges",
-            "N_qc2_missing_values",
-            "reporter_intensity_corrected_qc2_ave",
-            "reporter_intensity_corrected_qc2_sd",
-            "reporter_intensity_corrected_qc2_cv",
-            "calibrated_retention_time_qc2",
-            "retention_length_qc2",
-            "N_of_scans_qc2",
-            "qc3_peptide_charges",
-            "N_qc3_missing_values",
-            "reporter_intensity_corrected_qc3_ave",
-            "reporter_intensity_corrected_qc3_sd",
-            "reporter_intensity_corrected_qc3_cv",
-            "calibrated_retention_time_qc3",
-            "retention_length_qc3",
-            "N_of_scans_qc3",
-            "qc4_peptide_charges",
-            "N_qc4_missing_values",
-            "reporter_intensity_corrected_qc4_ave",
-            "reporter_intensity_corrected_qc4_sd",
-            "reporter_intensity_corrected_qc4_cv",
-            "calibrated_retention_time_qc4",
-            "retention_length_qc4",
-            "N_of_scans_qc4",
-            "qc5_peptide_charges",
-            "N_qc5_missing_values",
-            "reporter_intensity_corrected_qc5_ave",
-            "reporter_intensity_corrected_qc5_sd",
-            "reporter_intensity_corrected_qc5_cv",
-            "calibrated_retention_time_qc5",
-            "retention_length_qc5",
-            "N_of_scans_qc5",
-            "qc6_peptide_charges",
-            "N_qc6_missing_values",
-            "reporter_intensity_corrected_qc6_ave",
-            "reporter_intensity_corrected_qc6_sd",
-            "reporter_intensity_corrected_qc6_cv",
-            "calibrated_retention_time_qc6",
-            "retention_length_qc6",
-            "N_of_scans_qc6",
         ]
 
         assert len(expected_ndx) - len(actual_ndx) == 0, (
@@ -239,6 +254,16 @@ class TestMaxquantQualityControl:
             "N_protein_potential_contaminants",
             "N_protein_reverse_seq",
             "Protein_mean_seq_cov [%]",
+            "Protein_score_median",
+            "Protein_score_mean",
+            "Protein_qvalue_median",
+            "Protein_qvalue_lt_0_01 [%]",
+            "Protein_peptides_median",
+            "Protein_unique_peptides_median",
+            "Protein_razor_unique_peptides_median",
+            "Protein_unique_peptides_eq_1 [%]",
+            "Protein_msms_count_median",
+            "Protein_unique_seq_cov_median [%]",
             "TMT1_missing_values",
             "TMT2_missing_values",
             "TMT3_missing_values",
@@ -262,6 +287,14 @@ class TestMaxquantQualityControl:
             "N_peptides_last_amino_acid_K [%]",
             "N_peptides_last_amino_acid_R [%]",
             "N_peptides_last_amino_acid_other [%]",
+            "Peptide_score_median",
+            "Peptide_score_mean",
+            "Peptide_PEP_median",
+            "Peptide_PEP_lt_0_01 [%]",
+            "Peptide_length_median",
+            "Peptide_msms_count_median",
+            "Peptide_unique_groups [%]",
+            "Peptide_unique_proteins [%]",
             "Mean_parent_int_frac",
             "Uncalibrated - Calibrated m/z [ppm] (ave)",
             "Uncalibrated - Calibrated m/z [ppm] (sd)",
@@ -269,27 +302,111 @@ class TestMaxquantQualityControl:
             "Uncalibrated - Calibrated m/z [Da] (sd)",
             "Peak Width(ave)",
             "Peak Width (std)",
-            "qc1_peptide_charges",
-            "N_qc1_missing_values",
-            "reporter_intensity_corrected_qc1_ave",
-            "reporter_intensity_corrected_qc1_sd",
-            "reporter_intensity_corrected_qc1_cv",
-            "calibrated_retention_time_qc1",
-            "retention_length_qc1",
-            "N_of_scans_qc1",
-            "qc2_peptide_charges",
-            "N_qc2_missing_values",
-            "reporter_intensity_corrected_qc2_ave",
-            "reporter_intensity_corrected_qc2_sd",
-            "reporter_intensity_corrected_qc2_cv",
-            "calibrated_retention_time_qc2",
-            "retention_length_qc2",
-            "N_of_scans_qc2",
-            "N_of_Protein_qc_pepts",
-            "N_Protein_qc_missing_values",
-            "reporter_intensity_corrected_Protein_qc_ave",
-            "reporter_intensity_corrected_Protein_qc_sd",
-            "reporter_intensity_corrected_Protein_qc_cv",
+            "RUNDIR",
         ]
 
         assert all(actual_cols == expected_cols), actual_cols
+
+    @pytest.mark.parametrize("channels", [2, 6, 11, 18])
+    def test__dynamic_tmt_channel_counts(self, tmp_path, channels):
+        _build_protein_groups(tmp_path, channels)
+
+        out = maxquant_qc_protein_groups(tmp_path, protein=None)
+
+        for idx in range(1, channels + 1):
+            assert f"TMT{idx}_missing_values" in out.index
+
+    def test__maxquant_qc_csv_regenerates_stale_cache(self, tmp_path):
+        shutil.copytree(PATH, tmp_path, dirs_exist_ok=True)
+        stale = pd.DataFrame(
+            [
+                {
+                    "MS": 1,
+                    "N_protein_groups": 1,
+                    "N_peptides": 1,
+                }
+            ]
+        )
+        stale.to_csv(tmp_path / "maxquant_quality_control.csv", index=False)
+
+        out = maxquant_qc_csv(tmp_path)
+
+        assert out.loc[0, "Protein_score_median"] == pytest.approx(24.15, abs=0.01)
+        assert out.loc[0, "Peptide_length_median"] == 11
+        assert isinstance(out.loc[0, "Peptide_length_median"], numbers.Integral)
+
+    def test__discrete_medians_are_reported_as_integers(self, tmp_path):
+        _write_tsv(
+            tmp_path,
+            "proteinGroups.txt",
+            [
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 40.0,
+                    "Score": 10.0,
+                    "Q-value": 0.001,
+                    "Peptides": 2,
+                    "Unique peptides": 2,
+                    "Razor + unique peptides": 2,
+                    "MS/MS count": 4,
+                    "Unique sequence coverage [%]": 20.0,
+                },
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 50.0,
+                    "Score": 12.0,
+                    "Q-value": 0.002,
+                    "Peptides": 3,
+                    "Unique peptides": 3,
+                    "Razor + unique peptides": 3,
+                    "MS/MS count": 5,
+                    "Unique sequence coverage [%]": 30.0,
+                },
+            ],
+        )
+        _write_tsv(
+            tmp_path,
+            "peptides.txt",
+            [
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Score": 100.0,
+                    "PEP": 0.001,
+                    "Length": 10,
+                    "MS/MS Count": 4,
+                    "Unique (Groups)": "yes",
+                    "Unique (Proteins)": "yes",
+                    "Missed cleavages": 0,
+                    "Last amino acid": "K",
+                },
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Score": 120.0,
+                    "PEP": 0.002,
+                    "Length": 11,
+                    "MS/MS Count": 5,
+                    "Unique (Groups)": "no",
+                    "Unique (Proteins)": "no",
+                    "Missed cleavages": 1,
+                    "Last amino acid": "R",
+                },
+            ],
+        )
+
+        protein_out = maxquant_qc_protein_groups(tmp_path, protein=None)
+        peptide_out = maxquant_qc_peptides(tmp_path)
+
+        assert protein_out["Protein_peptides_median"] == 3
+        assert protein_out["Protein_unique_peptides_median"] == 3
+        assert protein_out["Protein_razor_unique_peptides_median"] == 3
+        assert protein_out["Protein_msms_count_median"] == 5
+        assert peptide_out["Peptide_length_median"] == 11
+        assert peptide_out["Peptide_msms_count_median"] == 5
+        assert isinstance(protein_out["Protein_peptides_median"], numbers.Integral)
+        assert isinstance(peptide_out["Peptide_length_median"], numbers.Integral)

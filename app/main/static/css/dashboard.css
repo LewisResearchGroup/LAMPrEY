@@ -74,12 +74,19 @@ body {
   color: var(--g-900);
   font-size: 14px;
   line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 #react-entry-point,
 #_dash-app-content,
 #_dash-global-error-container {
   background: transparent;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 *, *::before, *::after {
@@ -92,7 +99,9 @@ body {
 .pqc-dashboard-root {
   width: 100%;
   max-width: 100%;
-  min-height: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   padding: 10px 28px 16px;
 }
 
@@ -104,9 +113,11 @@ body {
    Layout Grid
    ═══════════════════════════════════════════════════════════════════════════ */
 .pqc-layout {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
+  min-height: 0;
 }
 
 .pqc-main-grid {
@@ -114,6 +125,8 @@ body {
   grid-template-columns: 340px minmax(0, 1fr);
   gap: 20px;
   align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -417,7 +430,7 @@ body {
 
 .pqc-kpi-value {
   margin-top: 6px;
-  font-size: 28px;
+  font-size: 25px;
   line-height: 1.1;
   color: var(--fb-700);
   font-weight: 800;
@@ -492,6 +505,14 @@ body {
   background: #ffffff;
   padding: 12px;
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pqc-canvas > .dash-graph {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .pqc-empty-state {
@@ -582,6 +603,14 @@ body {
 
 .pqc-qc-xaxis-wrap .pqc-field-label {
   margin-bottom: 4px;
+}
+
+/* Download button inside the toolbar should match dropdown height */
+.pqc-qc-plot-toolbar .pqc-anomaly-apply-btn {
+  min-height: 42px;
+  height: 42px;
+  min-width: 140px;
+  box-sizing: border-box;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -694,23 +723,19 @@ body {
 /* ═══════════════════════════════════════════════════════════════════════════
    Anomaly Tab
    ═══════════════════════════════════════════════════════════════════════════ */
-.pqc-anomaly-controls {
+/* ── Anomaly sidebar ── */
+.pqc-anomaly-sidebar {
+  flex: 0 0 260px;
+  width: 260px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 4px 0 8px;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--g-200);
   border-radius: var(--radius-lg);
   background: #ffffff;
   box-shadow: var(--shadow-xs);
-}
-
-.pqc-anomaly-controls-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(360px, 1fr) minmax(320px, 420px) minmax(220px, 260px);
-  align-items: stretch;
-  gap: 12px;
+  overflow-y: auto;
 }
 
 /* Anomaly sub-panels */
@@ -720,7 +745,6 @@ body {
   border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--g-50);
-  min-height: 74px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -733,42 +757,19 @@ body {
   line-height: 1.4;
 }
 
-.pqc-anomaly-slider-panel {
-  border: 1px solid var(--g-200);
-  border-radius: var(--radius-md);
-  padding: 10px 14px 6px;
-  background: var(--g-50);
+.pqc-anomaly-sidebar .pqc-field-label {
+  margin: 0 0 4px;
+  font-size: 13px;
 }
 
-.pqc-anomaly-slider-panel-inline {
-  margin: 0;
-  min-height: 74px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.pqc-anomaly-sidebar .pqc-panel-kicker {
+  font-size: 13px;
 }
 
-.pqc-anomaly-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.pqc-anomaly-controls .pqc-field-label {
-  margin: 0;
-}
-
-.pqc-anomaly-fraction-value {
-  display: none;
-}
-
-/* Slider styling */
+/* Slider styling (sidebar) */
 .pqc-anomaly-slider-wrap {
   min-width: 0;
   width: 100%;
-  flex: 1 1 auto;
   padding: 0 2px 2px;
 }
 
@@ -792,9 +793,9 @@ body {
 .pqc-anomaly-slider-wrap .rc-slider-handle {
   border: 2px solid var(--fb-500);
   background: #ffffff;
-  width: 18px;
-  height: 18px;
-  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
   box-shadow: var(--shadow-brand-ring-soft);
   transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
@@ -816,25 +817,8 @@ body {
   transform: translateX(-50%);
 }
 
-/* Anomaly extra controls */
-.pqc-anomaly-extra-controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-  flex: 0 0 auto;
-  align-self: stretch;
-  border: 1px solid var(--g-200);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  background: var(--g-50);
-  min-height: 74px;
-}
-
+/* Control blocks */
 .pqc-anomaly-control-block {
-  min-width: 158px;
-  width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -844,17 +828,12 @@ body {
   background: transparent;
 }
 
-.pqc-anomaly-control-block .pqc-field-label {
-  margin-bottom: 4px;
-}
-
 /* Anomaly apply panel */
 .pqc-anomaly-apply-panel {
   border: 1px solid var(--g-200);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--g-50);
-  min-height: 74px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -863,15 +842,15 @@ body {
 
 .pqc-anomaly-apply-btn {
   min-height: 36px;
-  height: 36px;
+  height: auto;
   border: 1px solid var(--fb-300);
   border-radius: var(--radius-md);
   background: #ffffff;
   color: var(--fb-700);
   font-size: 13px;
   font-weight: 600;
-  padding: 0 14px;
-  text-align: left;
+  padding: 8px 14px;
+  text-align: center;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -949,8 +928,10 @@ body {
 
 /* Anomaly plot area */
 .pqc-anomaly-plot-area {
-  min-height: 420px;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--g-200);
   border-radius: var(--radius-lg);
   background: #ffffff;
@@ -958,12 +939,15 @@ body {
 }
 
 .pqc-anomaly-loading-scope {
-  min-height: 408px;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .pqc-anomaly-plot-area .dash-graph {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1044,46 +1028,10 @@ body {
     min-width: 0;
   }
 
-  .pqc-anomaly-controls {
+  .pqc-anomaly-sidebar {
+    flex: 0 0 auto;
+    width: 100%;
     padding: 10px;
-  }
-
-  .pqc-anomaly-controls-row {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .pqc-anomaly-head {
-    min-width: 0;
-  }
-
-  .pqc-anomaly-label-row {
-    margin-bottom: 6px;
-  }
-
-  .pqc-anomaly-slider-wrap {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .pqc-anomaly-slider-wrap .rc-slider {
-    width: 100%;
-  }
-
-  .pqc-anomaly-extra-controls {
-    gap: 8px;
-    grid-template-columns: 1fr;
-    flex-wrap: wrap;
-    min-height: 0;
-  }
-
-  .pqc-anomaly-control-block {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .pqc-anomaly-apply-panel {
-    min-height: 0;
   }
 
   .pqc-anomaly-plot-area {
@@ -1091,3 +1039,34 @@ body {
     padding: 4px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Loading Spinner – Brand Palette
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Semi-transparent overlay while loading */
+._dash-loading-callback {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Circle spinner (type="circle") — small bouncing dots */
+.dash-sk-circle .dash-sk-child:before {
+  background-color: var(--color-mint-accent, #0f9d93) !important;
+}
+
+/* Default spinner (type="default") — bouncing rectangles */
+.dash-default-spinner .dash-default-spinner-rect1,
+.dash-default-spinner .dash-default-spinner-rect2,
+.dash-default-spinner .dash-default-spinner-rect3,
+.dash-default-spinner .dash-default-spinner-rect4,
+.dash-default-spinner .dash-default-spinner-rect5 {
+  background-color: var(--color-mint-accent, #0f9d93) !important;
+}
+
+/* Dot spinner (type="dot") — three bouncing dots */
+.dash-dot-spinner .dash-dot-spinner-bounce1,
+.dash-dot-spinner .dash-dot-spinner-bounce2,
+.dash-dot-spinner .dash-dot-spinner-bounce3 {
+  background-color: var(--color-mint-accent, #0f9d93) !important;
+}
+

@@ -20,6 +20,10 @@ from omics.plotly_tools import (
     set_template,
 )
 from omics.proteomics import ProteomicsQC
+from omics.proteomics.maxquant.quality_control import (
+    is_integer_metric_name,
+    metric_display_precision,
+)
 
 
 from dashboards.dashboards.dashboard.tools import list_to_dropdown_options
@@ -101,6 +105,12 @@ timeout = 360
 
 
 protein_table_default_cols = []
+TAB_PANEL_STYLE = {
+    "display": "none",
+    "flex": "1 1 auto",
+    "flexDirection": "column",
+    "minHeight": "0",
+}
 BUTTON_STYLE = {
     "padding": "8px 18px",
     "backgroundColor": "#ecfeff",
@@ -192,8 +202,15 @@ layout = html.Div(
                                         html.Div(
                                             className="pqc-kpi-card pqc-kpi-primary pqc-kpi-samples-card",
                                             children=[
-                                                html.Div("Samples", className="pqc-kpi-label"),
+                                                html.Div("Runs", className="pqc-kpi-label"),
                                                 html.Div("0", id="kpi-samples", className="pqc-kpi-value"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card pqc-kpi-primary pqc-kpi-samples-card",
+                                            children=[
+                                                html.Div("TMT Samples", className="pqc-kpi-label"),
+                                                html.Div("0", id="kpi-tmt-samples", className="pqc-kpi-value"),
                                             ],
                                         ),
                                         html.Div(
@@ -283,24 +300,56 @@ layout = html.Div(
                                         ),
                                         dcc.Tab(
                                             id="tab-protein-intensity",
-                                            label="Protein Intensities",
+                                            label="Protein Explorer",
                                             value="protein_intensity",
                                         ),
                                     ],
                                 ),
-                                html.Div(
-                                    id="tabs-content",
-                                    className="pqc-canvas",
-                                    children=[],
-                                ),
                                 dcc.Loading(
+                                    id="pqc-workspace-loading",
                                     type="circle",
+                                    parent_style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+                                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
                                     children=html.Div(
-                                        id="qc-table-div",
-                                        className="pqc-table-wrap",
-                                        style={"display": "none"},
-                                        children=[dt.DataTable(id="qc-table")],
-                                    )
+                                        style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+                                        children=[
+                                            html.Div(
+                                                id="qc-loading-probe",
+                                                className="pqc-hidden-trigger",
+                                            ),
+                                            html.Div(
+                                                id="tabs-content",
+                                                className="pqc-canvas",
+                                                style={"display": "flex", "flexDirection": "column", "minHeight": "0"},
+                                                children=[
+                                                    html.Div(
+                                                        id="tab-panel-quality-control",
+                                                        style={
+                                                            **TAB_PANEL_STYLE,
+                                                            "display": "flex",
+                                                        },
+                                                        children=quality_control.layout,
+                                                    ),
+                                                    html.Div(
+                                                        id="tab-panel-anomaly",
+                                                        style=TAB_PANEL_STYLE,
+                                                        children=anomaly.layout,
+                                                    ),
+                                                    html.Div(
+                                                        id="tab-panel-protein-intensity",
+                                                        style=TAB_PANEL_STYLE,
+                                                        children=protein_intensity.layout,
+                                                    ),
+                                                ],
+                                            ),
+                                        ]
+                                    ),
+                                ),
+                                html.Div(
+                                    id="qc-table-div",
+                                    className="pqc-table-wrap",
+                                    style={"display": "none"},
+                                    children=[dt.DataTable(id="qc-table")],
                                 ),
                             ],
                         )
@@ -311,6 +360,7 @@ layout = html.Div(
         html.Div(id="selection-output"),
         html.Div(id="selected-raw-files", style={"display": "none"}),
         html.Div(id="shapley-values", style={"display": "none"}),
+        dcc.Store(id="anomaly-predictions", data=None),
         html.Div(id="anomaly-cache-key", style={"display": "none"}),
         dcc.Store(id="anomaly-proposed-flags", data=None),
         dcc.Store(id="anomaly-apply-refresh", data=None),
@@ -342,14 +392,25 @@ quality_control.callbacks(app)
 protein_intensity.callbacks(app)
 
 
-@app.callback(Output("tabs-content", "children"), [Input("tabs", "value")])
+@app.callback(
+    Output("tab-panel-quality-control", "style"),
+    Output("tab-panel-anomaly", "style"),
+    Output("tab-panel-protein-intensity", "style"),
+    Input("tabs", "value"),
+)
 def render_content(tab):
+    qc_style = dict(TAB_PANEL_STYLE)
+    anomaly_style = dict(TAB_PANEL_STYLE)
+    protein_style = dict(TAB_PANEL_STYLE)
+
     if tab == "protein_intensity":
-        return protein_intensity.layout
-    if tab == "quality_control":
-        return quality_control.layout
-    if tab == "anomaly":
-        return anomaly.layout
+        protein_style["display"] = "flex"
+    elif tab == "anomaly":
+        anomaly_style["display"] = "flex"
+    else:
+        qc_style["display"] = "flex"
+
+    return qc_style, anomaly_style, protein_style
 
 
 @app.callback(Output("project", "options"), [Input("B_update", "n_clicks")])
@@ -429,9 +490,13 @@ def sync_scope_uploader_value(options, current_value):
         if isinstance(opt, dict) and opt.get("value") is not None
     }
     if current_value in values:
-        return current_value
+        raise PreventUpdate
     if "__all__" in values:
+        if current_value == "__all__":
+            raise PreventUpdate
         return "__all__"
+    if current_value is None:
+        raise PreventUpdate
     return None
 
 @app.callback(
@@ -440,6 +505,7 @@ def sync_scope_uploader_value(options, current_value):
     Output("qc-uploader-options", "data"),
     Output("pqc-scope-user-field", "style"),
     Output("scope-uploader", "options"),
+    Output("qc-loading-probe", "children"),
     Output("pqc-dashboard-alert", "children"),
     Input("project", "value"),
     Input("pipeline", "value"),
@@ -459,6 +525,7 @@ def refresh_qc_table(
     uid,
     **kwargs,
 ):
+    refresh_probe = str(pd.Timestamp.utcnow().value)
     user = kwargs.get("user")
     effective_uid = getattr(user, "uuid", None) or uid
     is_admin_session = bool(admin_data)
@@ -476,6 +543,7 @@ def refresh_qc_table(
             empty_options,
             scope_style,
             empty_options,
+            refresh_probe,
             None,
         )
     optional_columns = optional_columns or C.qc_columns_default
@@ -530,6 +598,7 @@ def refresh_qc_table(
             empty_options,
             scope_style,
             empty_options,
+            refresh_probe,
             alert,
         )
 
@@ -670,6 +739,7 @@ def refresh_qc_table(
         uploader_options,
         scope_style,
         uploader_options,
+        refresh_probe,
         alert,
     )
 
@@ -716,6 +786,7 @@ def sync_qc_table_columns(scope_data, current_values):
 
 @app.callback(
     Output("kpi-samples", "children"),
+    Output("kpi-tmt-samples", "children"),
     Output("kpi-median-protein-groups", "children"),
     Output("kpi-median-peptides", "children"),
     Output("kpi-median-msms", "children"),
@@ -734,17 +805,6 @@ def update_kpis(data, project, pipeline):
     if data is None:
         return (
             "0",
-            "--",
-            "--",
-            "--",
-            "--",
-            "--",
-            "--",
-            f"0 samples in {project_label} / {pipeline_label}",
-        )
-    df = pd.DataFrame(T.dashboard_rows(data))
-    if df.empty:
-        return (
             "0",
             "--",
             "--",
@@ -752,26 +812,95 @@ def update_kpis(data, project, pipeline):
             "--",
             "--",
             "--",
-            f"0 samples in {project_label} / {pipeline_label}",
+            f"0 runs in {project_label} / {pipeline_label}",
+        )
+    df = pd.DataFrame(T.dashboard_rows(data))
+    if df.empty:
+        return (
+            "0",
+            "0",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            f"0 runs in {project_label} / {pipeline_label}",
         )
 
-    def _median(column, suffix=""):
+    def _tmt_sample_count(frame):
+        tmt_channel_map = {}
+        for column in frame.columns:
+            if not isinstance(column, str):
+                continue
+            match = re.match(
+                r"^TMT(\d+)_(missing_values|peptide_count|protein_group_count)$",
+                column,
+            )
+            if match is None:
+                continue
+            channel_no = int(match.group(1))
+            tmt_channel_map.setdefault(channel_no, []).append(column)
+
+        if tmt_channel_map:
+            total = 0
+            for _, row in frame.iterrows():
+                row_channels = 0
+                for channel_cols in tmt_channel_map.values():
+                    present = False
+                    for column in channel_cols:
+                        value = row.get(column)
+                        if pd.notna(value):
+                            present = True
+                            break
+                    if present:
+                        row_channels += 1
+                total += row_channels
+            return int(total)
+
+        return 0
+
+    def _run_count(frame):
+        for column in ("RunKey", "SampleLabel", "RawFile"):
+            if column in frame.columns:
+                values = (
+                    frame[column]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                )
+                values = values[
+                    (values != "")
+                    & (~values.str.lower().isin({"nan", "none"}))
+                ]
+                if not values.empty:
+                    return int(values.nunique())
+        return int(len(frame.index))
+
+    def _median(column, unit=""):
         if column not in df.columns:
             return "--"
         series = pd.to_numeric(df[column], errors="coerce")
         if series.notna().sum() == 0:
             return "--"
-        return f"{series.median():.1f}{suffix}"
+        precision = 0 if is_integer_metric_name(column) else metric_display_precision(column, default=1)
+        value = f"{series.median():.{precision}f}"
+        return f"{value}{unit}" if unit else value
+
+    run_count = _run_count(df)
+    tmt_sample_count = _tmt_sample_count(df)
+    run_label = "run" if run_count == 1 else "runs"
 
     return (
-        str(len(df)),
+        str(run_count),
+        str(tmt_sample_count),
         _median("N_protein_groups"),
         _median("N_peptides"),
         _median("MS/MS Identified [%]", "%"),
         _median("N_missed_cleavages_eq_1 [%]", "%"),
         _median("Oxidations [%]", "%"),
-        _median("Uncalibrated - Calibrated m/z [ppm] (ave)"),
-        f"{len(df)} samples in {project_label} / {pipeline_label}",
+        _median("Uncalibrated - Calibrated m/z [ppm] (ave)", "ppm"),
+        f"{run_count} {run_label} in {project_label} / {pipeline_label}",
     )
 
 

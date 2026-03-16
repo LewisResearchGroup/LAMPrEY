@@ -28,12 +28,13 @@ def load_rawtools_data_from(path="/var/www/html/proteomics/files/raw"):
 formated_rawtools_data_from = load_rawtools_data_from
 
 SEPARATED_VALUE_COLS_MAXQUANT = [
- 'qc1_peptide_charges',
- 'N_qc1_missing_values',
- 'qc2_peptide_charges',
- 'N_qc2_missing_values',
- 'N_of_Protein_qc_pepts',
- 'N_Protein_qc_missing_values'
+    # Group-specific QC1/QC2/QC3 metrics are temporarily disabled.
+    # 'qc1_peptide_charges',
+    # 'N_qc1_missing_values',
+    # 'qc2_peptide_charges',
+    # 'N_qc2_missing_values',
+    # 'N_of_Protein_qc_pepts',
+    # 'N_Protein_qc_missing_values'
 ]
 
 def load_maxquant_data_from(path="/var/www/html/proteomics/files/", unpack=False):

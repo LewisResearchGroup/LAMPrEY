@@ -199,7 +199,13 @@ class RawFileAdmin(admin.ModelAdmin):
 
     ordering = ("-created",)
 
-    actions = ("allow_use_downstream", "prevent_use_downstream", "save_and_run")
+    actions = (
+        "allow_use_downstream",
+        "prevent_use_downstream",
+        "flag_selected",
+        "unflag_selected",
+        "save_and_run",
+    )
 
     class Media:
         css = {"all": ("css/admin-shared-changelist.css",)}
@@ -234,6 +240,14 @@ class RawFileAdmin(admin.ModelAdmin):
 
     def allow_use_downstream(modeladmin, request, queryset):
         queryset.update(use_downstream=True)
+
+    @admin.action(description="Flag selected raw files")
+    def flag_selected(modeladmin, request, queryset):
+        queryset.update(flagged=True)
+
+    @admin.action(description="Unflag selected raw files")
+    def unflag_selected(modeladmin, request, queryset):
+        queryset.update(flagged=False)
 
     def save_and_run(modeladmin, request, queryset):
         for raw_file in queryset:

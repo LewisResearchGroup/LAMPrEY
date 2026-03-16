@@ -7,9 +7,9 @@
           <i class="fas fa-home" aria-hidden="true"></i>
           <span>Home</span>
         </a>
-        <a href="{% url 'project:list' %}" class="app-nav-btn{% if path|slice:':3' == '/P/' %} app-nav-btn-active{% endif %}" title="List of all projects.">
+        <a href="{% url 'project:list' %}" class="app-nav-btn{% if path|slice:':3' == '/P/' %} app-nav-btn-active{% endif %}" title="Main workspace for browsing projects and pipelines.">
           <i class="fas fa-project-diagram" aria-hidden="true"></i>
-          <span>Projects</span>
+          <span>Main</span>
         </a>
         <a href="{% url 'dash:dashboard' %}" class="app-nav-btn{% if path|slice:':11' == '/dashboard/' %} app-nav-btn-active{% endif %}" title="Interactive dashboard for quality control and quick analysis.">
           <i class="fas fa-chart-bar" aria-hidden="true"></i>

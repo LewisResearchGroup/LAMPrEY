@@ -1,6 +1,10 @@
 import os
+import re
+import io
 import json
 import hashlib
+import zipfile
+import logging
 import pandas as pd
 
 import dash
@@ -13,112 +17,177 @@ from omics.proteomics import ProteomicsQC
 from dashboards.dashboards.dashboard import config as C
 from dashboards.dashboards.dashboard import tools as T
 
+# features removed because of redundancy
+ANOMALY_EXCLUDED_COLUMNS = {
+    "MS/MS Submitted",
+    "MS/MS Identified",
+    "N_protein_potential_contaminants",
+    "N_protein_reverse_seq",
+    "N_peptides_last_amino_acid_other [%]",
+    "Protein_score_mean",
+    "Peptide_score_mean",
+    "Protein_qvalue_median",
+    "Peptide_PEP_median",
+    "Protein_peptides_median",
+    "Protein_razor_unique_peptides_median",
+    "Protein_msms_count_median",
+    "Uncalibrated - Calibrated m/z [Da] (ave)",
+    "Uncalibrated - Calibrated m/z [Da] (sd)",
+    "Peak Width(ave)",
+    "Peak Width (std)",
+    "MedianPeakWidthAt10%H(s)",
+    "NumMs1Scans",
+    "NumMs3Scans",
+    "Ms1ScanRate(/s)",
+    "Ms2ScanRate(/s)",
+    "Ms3ScanRate(/s)",
+    "MeanMs2TriggerRate(/Ms1Scan)",
+    "Day",
+    "Week",
+    "Month",
+    "Year",
+}
+
+ANOMALY_EXCLUDED_PATTERNS = (
+    re.compile(r"^TMT\d+_peptide_count$"),
+    re.compile(r"^TMT\d+_protein_group_count$"),
+)
+
 
 layout = html.Div(
-    [
+    style={"display": "flex", "flexDirection": "row", "height": "100%", "minHeight": "400px", "gap": "12px"},
+    children=[
+        # ── Left: heatmap plot area ──
         html.Div(
-            className="pqc-anomaly-controls",
+            className="pqc-anomaly-plot-area",
+            style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
             children=[
                 html.Div(
-                    className="pqc-anomaly-controls-row",
+                    "No anomaly plot data available for this scope.",
+                    id="anomaly-empty-state",
+                    className="pqc-empty-state",
+                    style={"display": "none"},
+                ),
+                html.Div(
+                    className="pqc-anomaly-loading-scope",
+                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
                     children=[
+                        html.Div(id="anomaly-progress-probe", className="pqc-hidden-trigger"),
+                        dcc.Graph(
+                            id="anomaly-figure",
+                            figure={},
+                            responsive=True,
+                            style={
+                                "display": "block",
+                                "width": "100%",
+                                "height": "100%",
+                                "flex": "1 1 auto",
+                                "minHeight": "0",
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        # ── Right: settings sidebar ──
+        html.Div(
+            className="pqc-anomaly-sidebar",
+            children=[
+                html.Div(
+                    className="pqc-anomaly-head",
+                    children=[
+                        html.Div("Anomaly Settings", className="pqc-panel-kicker"),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Outlier fraction", className="pqc-field-label"),
                         html.Div(
-                            className="pqc-anomaly-head",
+                            className="pqc-anomaly-slider-wrap",
                             children=[
-                                html.Div("Anomaly Settings", className="pqc-panel-kicker"),
-                                html.Div(
-                                    "Tune sensitivity and display options for outlier screening.",
-                                    className="pqc-anomaly-subtitle",
+                                dcc.Slider(
+                                    id="anomaly-fraction",
+                                    value=5,
+                                    min=1,
+                                    max=50,
+                                    step=1,
+                                    marks={
+                                        1: {"label": "1%"},
+                                        25: {"label": "25%"},
+                                        50: {"label": "50%"},
+                                    },
+                                    tooltip={"placement": "bottom", "always_visible": False},
                                 ),
                             ],
                         ),
-                        html.Div(
-                            className="pqc-anomaly-slider-panel pqc-anomaly-slider-panel-inline",
-                            children=[
-                                html.Div(
-                                    className="pqc-anomaly-label-row",
-                                    children=[
-                                        html.Div("Outlier fraction", className="pqc-field-label"),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-anomaly-slider-wrap",
-                                    children=[
-                                        dcc.Slider(
-                                            id="anomaly-fraction",
-                                            value=5,
-                                            min=1,
-                                            max=100,
-                                            step=1,
-                                            marks={
-                                                i: {"label": f"{i}%"}
-                                                for i in [1, 25, 50, 75, 100]
-                                            },
-                                            tooltip={"placement": "bottom", "always_visible": False},
-                                        )
-                                    ],
-                                ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Row order", className="pqc-field-label"),
+                        dcc.Dropdown(
+                            id="anomaly-row-order",
+                            className="pqc-anomaly-dropdown",
+                            clearable=False,
+                            searchable=False,
+                            options=[
+                                {"label": "Input order", "value": "input"},
+                                {"label": "Anomalous first", "value": "anomalous_first"},
                             ],
+                            value="input",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Metrics shown", className="pqc-field-label"),
+                        dcc.Dropdown(
+                            id="anomaly-metric-count",
+                            className="pqc-anomaly-dropdown",
+                            clearable=False,
+                            searchable=False,
+                            options=[
+                                {"label": "10", "value": 10},
+                                {"label": "15", "value": 15},
+                                {"label": "20", "value": 20},
+                                {"label": "25", "value": 25},
+                                {"label": "30", "value": 30},
+                                {"label": "All", "value": "all"},
+                            ],
+                            value=20,
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-control-block",
+                    children=[
+                        html.Div("Export", className="pqc-field-label"),
+                        html.Button(
+                            "Download data",
+                            id="anomaly-download-btn",
+                            className="pqc-anomaly-apply-btn",
+                            n_clicks=0,
+                        ),
+                        dcc.Download(id="anomaly-download"),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-anomaly-apply-panel",
+                    children=[
+                        html.Div("Apply changes", className="pqc-field-label"),
+                        html.Button(
+                            "Apply flag changes",
+                            id="anomaly-apply",
+                            className="pqc-anomaly-apply-btn",
+                            n_clicks=0,
+                            disabled=True,
                         ),
                         html.Div(
-                            className="pqc-anomaly-extra-controls",
-                            children=[
-                                html.Div(
-                                    className="pqc-anomaly-control-block",
-                                    children=[
-                                        html.Div("Row order", className="pqc-field-label"),
-                                        dcc.Dropdown(
-                                            id="anomaly-row-order",
-                                            className="pqc-anomaly-dropdown",
-                                            clearable=False,
-                                            searchable=False,
-                                            options=[
-                                                {"label": "Input order", "value": "input"},
-                                                {"label": "Anomalous first", "value": "anomalous_first"},
-                                            ],
-                                            value="input",
-                                        ),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-anomaly-control-block",
-                                    children=[
-                                        html.Div("Metrics shown", className="pqc-field-label"),
-                                        dcc.Dropdown(
-                                            id="anomaly-metric-count",
-                                            className="pqc-anomaly-dropdown",
-                                            clearable=False,
-                                            searchable=False,
-                                            options=[
-                                                {"label": "10", "value": 10},
-                                                {"label": "15", "value": 15},
-                                                {"label": "20", "value": 20},
-                                                {"label": "25", "value": 25},
-                                                {"label": "30", "value": 30},
-                                                {"label": "All", "value": "all"},
-                                            ],
-                                            value=20,
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                        html.Div(
-                            className="pqc-anomaly-apply-panel",
-                            children=[
-                                html.Div("Apply changes", className="pqc-field-label"),
-                                html.Button(
-                                    "Apply proposed flag changes",
-                                    id="anomaly-apply",
-                                    className="pqc-anomaly-apply-btn",
-                                    n_clicks=0,
-                                    disabled=True,
-                                ),
-                                html.Div(
-                                    id="anomaly-apply-status",
-                                    className="pqc-anomaly-apply-status",
-                                ),
-                            ],
+                            id="anomaly-apply-status",
+                            className="pqc-anomaly-apply-status",
                         ),
                     ],
                 ),
@@ -139,47 +208,44 @@ layout = html.Div(
                 ),
             ],
         ),
-        html.Div(
-            className="pqc-anomaly-plot-area",
-            children=[
-                html.Div(
-                    "No anomaly plot data available for this scope.",
-                    id="anomaly-empty-state",
-                    className="pqc-empty-state",
-                    style={"display": "none"},
-                ),
-                dcc.Loading(
-                    id="anomaly-loading",
-                    type="circle",
-                    style={"height": "100%"},
-                    children=html.Div(
-                        className="pqc-anomaly-loading-scope",
-                        children=[
-                            html.Div(id="anomaly-progress-probe", className="pqc-hidden-trigger"),
-                            dcc.Graph(
-                                id="anomaly-figure",
-                                figure={},
-                                style={
-                                    "display": "block",
-                                    "width": "100%",
-                                    "height": "100%",
-                                },
-                            ),
-                        ],
-                    ),
-                )
-            ],
-        ),
     ]
 )
 
 
-def compute_flag_proposals(qc_data, predictions):
+def _top_anomaly_contributors(run_key, shap_values, max_items=3):
+    if shap_values is None or shap_values.empty:
+        return []
+    run_key = str(run_key)
+    shap_frame = shap_values.copy()
+    shap_frame.index = shap_frame.index.astype(str)
+    if run_key not in shap_frame.index:
+        return []
+
+    series = pd.to_numeric(shap_frame.loc[run_key], errors="coerce").dropna()
+    if series.empty:
+        return []
+
+    negative = series[series < 0].sort_values()
+    ranked = negative if not negative.empty else series.sort_values()
+    contributors = []
+    for metric, value in ranked.head(max_items).items():
+        contributors.append(
+            {
+                "metric": str(metric),
+                "shap_value": float(value),
+            }
+        )
+    return contributors
+
+
+def compute_flag_proposals(qc_data, predictions, shap_values=None):
     if qc_data is None or qc_data.empty or predictions is None or predictions.empty:
         return {
             "run_keys_to_flag": [],
             "run_keys_to_unflag": [],
+            "run_keys_already_flagged": [],
             "preview_rows": [],
+            "already_flagged_rows": [],
         }
 
     frame = qc_data.copy()
@@ -205,26 +271,82 @@ def compute_flag_proposals(qc_data, predictions):
     run_keys_to_unflag = [
         key for key in prediction_index[normal_mask].tolist() if key in currently_flagged
     ]
+    run_keys_already_flagged = [
+        key for key in prediction_index[anomaly_mask].tolist() if key in currently_flagged
+    ]
 
     preview_rows = []
+    already_flagged_rows = []
     for action, keys in (("flag", run_keys_to_flag), ("unflag", run_keys_to_unflag)):
         for key in keys:
             row = frame.loc[frame[index_col] == key].iloc[0]
-            preview_rows.append(
-                {
-                    "run_key": key,
-                    "sample_label": row[label_col],
-                    "raw_file": row.get("RawFile", row[label_col]),
-                    "action": action,
-                    "current_flagged": bool(row["Flagged"]),
-                }
+            preview_row = {
+                "run_key": key,
+                "sample_label": row[label_col],
+                "raw_file": row.get("RawFile", row[label_col]),
+                "action": action,
+                "current_flagged": bool(row["Flagged"]),
+            }
+            if shap_values is not None and action == "flag":
+                preview_row["top_contributors"] = _top_anomaly_contributors(
+                    key, shap_values
+                )
+            preview_rows.append(preview_row)
+
+    for key in run_keys_already_flagged:
+        row = frame.loc[frame[index_col] == key].iloc[0]
+        flagged_row = {
+            "run_key": key,
+            "sample_label": row[label_col],
+            "raw_file": row.get("RawFile", row[label_col]),
+            "current_flagged": True,
+        }
+        if shap_values is not None:
+            flagged_row["top_contributors"] = _top_anomaly_contributors(
+                key, shap_values
             )
+        already_flagged_rows.append(flagged_row)
 
     return {
         "run_keys_to_flag": run_keys_to_flag,
         "run_keys_to_unflag": run_keys_to_unflag,
+        "run_keys_already_flagged": run_keys_already_flagged,
         "preview_rows": preview_rows,
+        "already_flagged_rows": already_flagged_rows,
     }
+
+
+def _available_anomaly_columns(df):
+    if df is None or df.empty:
+        return []
+
+    available = [
+        column
+        for column in C.qc_columns_options
+        if (
+            column in df.columns
+            and column not in C.qc_columns_always
+            and column not in ANOMALY_EXCLUDED_COLUMNS
+            and not any(pattern.match(str(column)) for pattern in ANOMALY_EXCLUDED_PATTERNS)
+        )
+    ]
+
+    tmt_pattern = re.compile(r"^TMT\d+_(missing_values|peptide_count|protein_group_count)$")
+    detected_tmt = sorted(
+        [column for column in df.columns if tmt_pattern.match(str(column))],
+        key=lambda column: (
+            int(re.search(r"\d+", str(column)).group(0)),
+            str(column),
+        ),
+    )
+    for column in detected_tmt:
+        if (
+            column not in available
+            and column not in ANOMALY_EXCLUDED_COLUMNS
+            and not any(pattern.match(str(column)) for pattern in ANOMALY_EXCLUDED_PATTERNS)
+        ):
+            available.append(column)
+    return available
 
 
 def apply_anomaly_flag_changes(proposal, project, pipeline, user, n_clicks):
@@ -259,6 +381,41 @@ def apply_anomaly_flag_changes(proposal, project, pipeline, user, n_clicks):
 def callbacks(app):
     min_samples_for_anomaly = 3
 
+    def _load_predictions_frame(predictions_payload):
+        if not predictions_payload:
+            return pd.DataFrame()
+        try:
+            return pd.read_json(predictions_payload, orient="split")
+        except ValueError:
+            return pd.read_json(predictions_payload)
+
+    def _rank_metrics_for_anomaly(df_shap, predictions_df):
+        if df_shap is None or df_shap.empty:
+            return pd.Index([])
+
+        shap_frame = df_shap.copy()
+        shap_frame.index = shap_frame.index.astype(str)
+        negative_only = -shap_frame.clip(upper=0)
+
+        anomaly_rows = pd.Index([])
+        if predictions_df is not None and not predictions_df.empty:
+            prediction_frame = predictions_df.copy()
+            prediction_frame.index = prediction_frame.index.astype(str)
+            if "Anomaly" in prediction_frame.columns:
+                anomaly_rows = prediction_frame.index[
+                    pd.to_numeric(prediction_frame["Anomaly"], errors="coerce").fillna(0).astype(int) == 1
+                ]
+                anomaly_rows = anomaly_rows.intersection(negative_only.index)
+
+        if len(anomaly_rows) > 0:
+            ranking_series = negative_only.loc[anomaly_rows].mean(axis=0)
+        else:
+            ranking_series = negative_only.mean(axis=0)
+            if not (ranking_series > 0).any():
+                ranking_series = shap_frame.abs().mean(axis=0)
+
+        return ranking_series.sort_values(ascending=False).index
+
     def _short_label(value, max_len=26):
         text = str(value)
         if len(text) <= max_len:
@@ -286,9 +443,11 @@ def callbacks(app):
         Input("anomaly-fraction", "value"),
     )
     def render_fraction_value(value):
-        return f"{int(value or 0)}%"
+        value = min(max(int(value or 5), 1), 50)
+        return f"{value}%"
 
     @app.callback(
+        Output("anomaly-predictions", "data"),
         Output("shapley-values", "children"),
         Output("anomaly-progress-probe", "children"),
         Output("anomaly-cache-key", "children"),
@@ -298,7 +457,6 @@ def callbacks(app):
         Input("pipeline", "value"),
         Input("anomaly-fraction", "value"),
         Input("qc-scope-data", "data"),
-        State("qc-table-columns", "value"),
         State("anomaly-cache-key", "children"),
         State("shapley-values", "children"),
     )
@@ -308,7 +466,6 @@ def callbacks(app):
         pipeline,
         fraction_in,
         scope_data,
-        columns,
         cached_key,
         cached_payload,
         **kwargs,
@@ -320,18 +477,20 @@ def callbacks(app):
         if not scope_data:
             raise PreventUpdate
 
-        fraction = (fraction_in or 5) / 100.0
+        fraction_pct = min(max(int(fraction_in or 5), 1), 50)
+        fraction = fraction_pct / 100.0
         algorithm = "iforest"
-        columns = columns or []
         # Cache against the current scope payload itself, not just the selected
         # project/pipeline parameters, so a changed sample set forces recompute.
         scope_sig = hashlib.md5(json.dumps(scope_data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
+        model_columns = _available_anomaly_columns(qc_data)
         cache_key = json.dumps(
             {
                 "project": project,
                 "pipeline": pipeline,
-                "fraction": int(fraction_in or 5),
-                "columns": sorted(columns),
+                "fraction": fraction_pct,
+                "columns": sorted(model_columns),
                 "scope_sig": scope_sig,
                 "algorithm": algorithm,
             },
@@ -347,12 +506,17 @@ def callbacks(app):
 
         # Use already loaded QC scope data from dashboard state to avoid
         # secondary API calls that may fail auth-context checks.
-        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
         if qc_data.empty or "RawFile" not in qc_data.columns:
-            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
+            return None, None, "No anomaly plot data available for this scope.", cache_key, None
         sample_count = len(qc_data.index)
         if sample_count < min_samples_for_anomaly:
-            return None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key, None
+            return (
+                None,
+                None,
+                f"Anomaly detection requires at least {min_samples_for_anomaly} samples. Current selection has {sample_count}.",
+                cache_key,
+                None,
+            )
         index_col = "RunKey" if "RunKey" in qc_data.columns else "RawFile"
         qc_model = qc_data.set_index(index_col)
 
@@ -368,28 +532,40 @@ def callbacks(app):
 
         try:
             predictions, df_shap = T.detect_anomalies(
-                qc_model, algorithm=algorithm, columns=columns, fraction=fraction, **params
+                qc_model,
+                algorithm=algorithm,
+                columns=model_columns,
+                fraction=fraction,
+                **params,
             )
         except Exception as exc:
             logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
-            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
+            return (
+                None,
+                None,
+                f"Anomaly detection could not run for this scope: {exc}",
+                cache_key,
+                None,
+            )
 
-        proposal = compute_flag_proposals(qc_data, predictions)
+        proposal = compute_flag_proposals(qc_data, predictions, df_shap)
         proposal.update(
             {
                 "project": project,
                 "pipeline": pipeline,
-                "fraction": int(fraction_in or 5),
+                "fraction": fraction_pct,
+                "scope_sig": scope_sig,
                 "cache_key": cache_key,
             }
         )
 
-        payload = (
+        prediction_payload = predictions.to_json(orient="split")
+        shap_payload = (
             df_shap.to_json(orient="split")
             if df_shap is not None
             else None
         )
-        return payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key, proposal
+        return prediction_payload, shap_payload, f"updated-{project}-{pipeline}-{fraction_pct}", cache_key, proposal
 
 
     @app.callback(
@@ -398,13 +574,15 @@ def callbacks(app):
         Output("anomaly-figure", "style"),
         Output("anomaly-empty-state", "children"),
         Output("anomaly-empty-state", "style"),
+        Input("anomaly-predictions", "data"),
         Input("shapley-values", "children"),
+        Input("anomaly-progress-probe", "children"),
         Input("qc-scope-data", "data"),
         Input("tabs", "value"),
         Input("anomaly-row-order", "value"),
         Input("anomaly-metric-count", "value"),
     )
-    def plot_shapley(shapley_values, qc_data, tab, row_order, metric_count):
+    def plot_shapley(predictions_payload, shapley_values, progress_message, qc_data, tab, row_order, metric_count):
         config = T.gen_figure_config(
             filename="Anomaly-Detection-Shapley-values",
             editable=False,
@@ -442,7 +620,12 @@ def callbacks(app):
                 {"display": "flex"},
             )
         if shapley_values is None:
-            return {}, config, hidden_graph_style, default_empty_message, {"display": "flex"}
+            message = (
+                progress_message
+                if isinstance(progress_message, str) and progress_message and not progress_message.startswith("updated-")
+                else default_empty_message
+            )
+            return {}, config, hidden_graph_style, message, {"display": "flex"}
 
         try:
             df_shap = pd.read_json(shapley_values, orient="split")
@@ -450,6 +633,7 @@ def callbacks(app):
             # Backward compatibility with cached payloads serialized
             # using pandas default orient.
             df_shap = pd.read_json(shapley_values)
+        predictions_df = _load_predictions_frame(predictions_payload)
 
         # samples on rows, QC metrics on columns
         row_keys = (
@@ -465,35 +649,35 @@ def callbacks(app):
         label_by_key = dict(zip(row_keys, row_labels))
         df_shap.index = df_shap.index.astype(str)
         df_shap = df_shap.reindex(row_keys).fillna(0)
-        df_shap.index = [label_by_key.get(key, key) for key in row_keys]
 
         if row_order == "anomalous_first":
             sample_rank = df_shap.abs().mean(axis=1).sort_values(ascending=False).index
             df_shap = df_shap.reindex(sample_rank)
 
-        if metric_count != "all":
+        metric_rank = _rank_metrics_for_anomaly(df_shap, predictions_df)
+        if metric_count == "all":
+            df_shap = df_shap.loc[:, metric_rank]
+        else:
             max_metrics = int(metric_count or 20)
-            metric_rank = df_shap.abs().mean(axis=0).sort_values(ascending=False).index
             df_shap = df_shap.loc[:, metric_rank[:max_metrics]]
+
+        label_by_key = dict(zip(row_keys, row_labels))
+        df_shap.index = [label_by_key.get(key, key) for key in df_shap.index]
 
         df_plot = df_shap.copy()
         df_plot.index = [_short_label_keep_ends(v, max_len=30, tail_len=8) for v in df_plot.index]
         df_plot.columns = [_short_label(_pretty_metric_name(c), max_len=30) for c in df_plot.columns]
 
-        # Keep a stable panel size across cohorts to avoid page-height jumps.
-        fixed_height = 460
-
+        # Display metrics on y-axis and samples on x-axis.
         fig = T.px_heatmap(
-            df_plot,
-            layout_kws=dict(
-                height=fixed_height,
-            ),
+            df_plot.T,
+            layout_kws=dict(),
         )
 
         # Clean axes
         fig.update_xaxes(showgrid=False, zeroline=False)
         fig.update_yaxes(showgrid=False, zeroline=False,
-                         side="left", ticklabelposition="outside")
+                         side="left", ticklabelposition="outside", autorange="reversed")
 
         # Size & spacing
         fig.update_layout(
@@ -515,12 +699,16 @@ def callbacks(app):
             tickangle=0,
             ticklabelposition="outside",
             automargin=True,
-            title_text="QC metrics",
+            title_text="Samples",
             title_standoff=12,
             showticklabels=False,
             ticks="",
         )
-        fig.update_yaxes(title_text="Samples", title_standoff=36)
+        fig.update_yaxes(
+            title_text="QC metrics",
+            title_standoff=20,
+            automargin=True,
+        )
 
         # SHAP diverging scale
         heatmap = [t for t in fig.data if t.type == "heatmap"][0]
@@ -531,14 +719,17 @@ def callbacks(app):
         heatmap.zmin = -rng
         heatmap.zmax =  rng
         heatmap.zmid = 0
+        # IsolationForest SHAP explains a normality-oriented model output:
+        # negative values push toward anomaly, positive values toward normality.
+        # Use the non-reversed scale so anomalous values render as red warnings.
         heatmap.colorscale = "RdBu"
 
         heatmap.colorbar.title = dict(
-            text="SHAP (- normal | + anomalous)",
+            text="SHAP (- anomalous | + normal)",
             side="right",
         )
         heatmap.colorbar.tickvals = [-rng, 0, rng]
-        heatmap.colorbar.ticktext = ["More normal", "0", "More anomalous"]
+        heatmap.colorbar.ticktext = ["More anomalous", "0", "More normal"]
         heatmap.colorbar.tickfont = dict(size=9)
         heatmap.colorbar.title.font = dict(size=11)
 
@@ -554,11 +745,23 @@ def callbacks(app):
         Output("anomaly-preview-details", "children"),
         Output("anomaly-apply", "disabled"),
         Input("anomaly-proposed-flags", "data"),
+        Input("anomaly-progress-probe", "children"),
         Input("tabs", "value"),
     )
-    def render_proposed_flag_changes(proposal, tab):
+    def render_proposed_flag_changes(proposal, progress_message, tab):
         if tab != "anomaly":
             raise PreventUpdate
+
+        if (
+            isinstance(progress_message, str)
+            and progress_message
+            and not progress_message.startswith("updated-")
+        ):
+            return (
+                "Preview unavailable.",
+                progress_message,
+                True,
+            )
 
         if not proposal:
             return (
@@ -568,10 +771,28 @@ def callbacks(app):
             )
 
         preview_rows = list(proposal.get("preview_rows") or [])
+        already_flagged_rows = list(proposal.get("already_flagged_rows") or [])
         n_flag = len(proposal.get("run_keys_to_flag") or [])
         n_unflag = len(proposal.get("run_keys_to_unflag") or [])
+        n_already_flagged = len(proposal.get("run_keys_already_flagged") or [])
         total = len(preview_rows)
         if total == 0:
+            if n_already_flagged > 0:
+                sample_labels = [
+                    str(row.get("sample_label") or row.get("run_key") or "sample")
+                    for row in already_flagged_rows[:3]
+                ]
+                suffix = ""
+                if n_already_flagged > 3:
+                    suffix = f" and {n_already_flagged - 3} more"
+                return (
+                    "The model found no new flag changes.",
+                    f"{n_already_flagged} predicted anomalous sample"
+                    f"{'' if n_already_flagged == 1 else 's'} "
+                    f"{'is' if n_already_flagged == 1 else 'are'} already manually flagged: "
+                    f"{', '.join(sample_labels)}{suffix}.",
+                    True,
+                )
             return (
                 "Preview only. The current anomaly model does not suggest any flag changes.",
                 "Manual flags are unchanged until you explicitly apply a proposal.",
@@ -588,16 +809,28 @@ def callbacks(app):
             preview_lines.append(html.Div(f"...and {total - 6} more proposed change(s)."))
 
         summary = (
-            f"Preview only: {n_flag} sample(s) would be flagged and "
-            f"{n_unflag} sample(s) would be unflagged."
+            f"Preview only: {n_flag} sample(s) would be flagged"
         )
+        if n_already_flagged > 0:
+            sample_labels = [
+                str(row.get("sample_label") or row.get("run_key") or "sample")
+                for row in already_flagged_rows[:3]
+            ]
+            already_flagged_note = (
+                f"{n_already_flagged} predicted anomalous sample"
+                f"{'' if n_already_flagged == 1 else 's'} "
+                f"{'is' if n_already_flagged == 1 else 'are'} already manually flagged: "
+                f"{', '.join(sample_labels)}"
+            )
+            if n_already_flagged > 3:
+                already_flagged_note += f" and {n_already_flagged - 3} more"
+            already_flagged_note += "."
+        else:
+            already_flagged_note = None
         details = html.Div(
             [
-                html.Div(
-                    "Manual flags remain unchanged until you click Apply. "
-                    "Applying will overwrite current flag states for the listed samples."
-                ),
                 html.Div(preview_lines),
+                html.Div(already_flagged_note) if already_flagged_note else None,
             ]
         )
         return summary, details, False
@@ -619,3 +852,161 @@ def callbacks(app):
             user=user,
             n_clicks=n_clicks,
         )
+
+    @app.callback(
+        Output("anomaly-download", "data"),
+        Input("anomaly-download-btn", "n_clicks"),
+        State("anomaly-predictions", "data"),
+        State("shapley-values", "children"),
+        State("qc-scope-data", "data"),
+        State("anomaly-row-order", "value"),
+        State("anomaly-metric-count", "value"),
+        State("anomaly-proposed-flags", "data"),
+        State("project", "value"),
+        State("pipeline", "value"),
+    )
+    def download_anomaly_data(
+        n_clicks,
+        predictions_payload,
+        shapley_values,
+        scope_data,
+        row_order,
+        metric_count,
+        proposal,
+        project,
+        pipeline,
+    ):
+        if not n_clicks:
+            raise PreventUpdate
+        if shapley_values is None or not scope_data:
+            raise PreventUpdate
+
+        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
+        if qc_data.empty or "RawFile" not in qc_data.columns:
+            raise PreventUpdate
+
+        try:
+            df_shap = pd.read_json(shapley_values, orient="split")
+        except ValueError:
+            df_shap = pd.read_json(shapley_values)
+        predictions_df = _load_predictions_frame(predictions_payload)
+
+        # Build labeled index (same logic as the plot callback)
+        row_keys = (
+            qc_data["RunKey"].astype(str)
+            if "RunKey" in qc_data.columns
+            else qc_data["RawFile"].astype(str)
+        )
+        row_labels = (
+            qc_data["SampleLabel"].astype(str)
+            if "SampleLabel" in qc_data.columns
+            else qc_data["RawFile"].astype(str)
+        )
+        label_by_key = dict(zip(row_keys, row_labels))
+        df_shap.index = df_shap.index.astype(str)
+        df_shap = df_shap.reindex(row_keys).fillna(0)
+
+        anomaly_keys = set()
+        if not predictions_df.empty and "Anomaly" in predictions_df.columns:
+            prediction_frame = predictions_df.copy()
+            prediction_frame.index = prediction_frame.index.astype(str)
+            anomaly_keys = set(
+                prediction_frame.index[
+                    pd.to_numeric(prediction_frame["Anomaly"], errors="coerce").fillna(0).astype(int) == 1
+                ].tolist()
+            )
+        elif proposal:
+            anomaly_keys = set(proposal.get("run_keys_to_flag") or [])
+        df_shap["__anomaly_label__"] = ["Anomaly" if key in anomaly_keys else "Normal" for key in row_keys]
+
+        df_shap.index = [label_by_key.get(key, key) for key in row_keys]
+
+        if row_order == "anomalous_first":
+            sample_rank = df_shap.drop(columns=["__anomaly_label__"]).abs().mean(axis=1).sort_values(ascending=False).index
+            df_shap = df_shap.reindex(sample_rank)
+
+        shap_cols = [c for c in df_shap.columns if c != "__anomaly_label__"]
+        metric_rank = _rank_metrics_for_anomaly(df_shap[shap_cols], predictions_df)
+        if metric_count == "all":
+            keep = list(metric_rank)
+        else:
+            max_metrics = int(metric_count or 20)
+            keep = list(metric_rank[:max_metrics])
+        keep.append("__anomaly_label__")
+        df_shap = df_shap.loc[:, keep]
+
+        df_shap.index = [label_by_key.get(key, key) for key in df_shap.index]
+
+        # Extract anomaly labels, then drop the helper column
+        anomaly_labels = df_shap.pop("__anomaly_label__")
+
+        # Use full metric names (not truncated) for the CSV
+        df_shap.columns = [_pretty_metric_name(c) for c in df_shap.columns]
+
+        # Prepend the anomaly label
+        df_out = df_shap.copy()
+        df_out.insert(0, "Anomaly Label", anomaly_labels.values)
+        df_out.index.name = "Sample"
+
+        base = f"anomaly-{project or 'project'}-{pipeline or 'pipeline'}"
+
+        # Build ZIP with CSV + heatmap PNG
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            csv_buf = io.StringIO()
+            df_out.to_csv(csv_buf)
+            zf.writestr(f"{base}-shap-values.csv", csv_buf.getvalue())
+
+            # Render heatmap with matplotlib/seaborn
+            try:
+                import matplotlib
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+                import seaborn as sns
+
+                # Build the plot-ready matrix (same labels as the Plotly heatmap)
+                df_plot = df_shap.copy()
+                df_plot.index = [
+                    _short_label_keep_ends(v, max_len=30, tail_len=8)
+                    for v in df_plot.index
+                ]
+                df_plot.columns = [
+                    _short_label(c, max_len=30) for c in df_plot.columns
+                ]
+
+                n_metrics = len(df_plot.columns)
+                n_samples = len(df_plot.index)
+                fig_w = max(6, 1.0 * n_samples + 3)
+                fig_h = max(4, 0.35 * n_metrics + 1.5)
+
+                rng = max(abs(df_plot.values.min()), abs(df_plot.values.max()))
+                fig_mpl, ax = plt.subplots(figsize=(fig_w, fig_h))
+                sns.heatmap(
+                    df_plot.T,
+                    ax=ax,
+                    cmap="RdBu",
+                    center=0,
+                    vmin=-rng,
+                    vmax=rng,
+                    linewidths=0.5,
+                    linecolor="#ffffff",
+                    cbar_kws={
+                        "label": "SHAP (- anomalous | + normal)",
+                        "shrink": 0.8,
+                    },
+                )
+                ax.set_xlabel("Samples", fontsize=11)
+                ax.set_ylabel("QC Metrics", fontsize=11)
+                ax.tick_params(axis="y", labelsize=8)
+                ax.tick_params(axis="x", labelsize=8, rotation=45)
+                plt.tight_layout()
+
+                png_buf = io.BytesIO()
+                fig_mpl.savefig(png_buf, format="png", dpi=150)
+                plt.close(fig_mpl)
+                png_buf.seek(0)
+                zf.writestr(f"{base}-heatmap.png", png_buf.getvalue())
+            except Exception:
+                pass  # matplotlib/seaborn not available — skip figure
+
+        return dcc.send_bytes(zip_buf.getvalue(), f"{base}.zip")

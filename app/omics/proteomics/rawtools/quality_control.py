@@ -136,7 +136,6 @@ def rawtools_metrics_cmd(
     """
     Generates command to run rawtools parse to generate
     the RawTools files:
-        *_Matrix.txt
         *_Metrics.txt
         *_Ms2_TIC_chromatogram.txt
         *.mgf
@@ -145,7 +144,7 @@ def rawtools_metrics_cmd(
     output_dir = abspath(str(output_dir))
     raw_basename = os.path.basename(raw)
     os.makedirs(output_dir, exist_ok=True)
-    if not isfile(join(output_dir, f"{raw_basename}_Matrix.txt")) or rerun:
+    if not isfile(join(output_dir, f"{raw_basename}_Metrics.txt")) or rerun:
         spec = rawtools_metrics_spec(
             raw=raw,
             output_dir=output_dir,
@@ -230,10 +229,9 @@ def rawtools_output_files_exist(path):
     assert len(raw_files) > 0
     for raw_file in raw_files:
         mgf = raw_file + ".mgf"
-        matrix = raw_file + "_Matrix.txt"
         metrics = raw_file + "_Metrics.txt"
         tic = raw_file + "_Ms2_TIC_chromatogram.txt"
-        files = [mgf, matrix, metrics, tic]
+        files = [mgf, metrics, tic]
         exist = [isfile(f) for f in files]
         if not all(exist):
             return False

@@ -7,13 +7,22 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
 
 from maxquant.models import Pipeline
-from maxquant.rawtools import normalize_rawtools_args, parse_rawtools_args
+from maxquant.rawtools import DEFAULT_RAWTOOLS_ARGS, normalize_rawtools_args, parse_rawtools_args
 from maxquant.tasks import rawtools_metrics
+from omics.proteomics.rawtools.quality_control import (
+    rawtools_metrics_cmd,
+    rawtools_output_files_exist,
+)
 from project.models import Project
 from user.models import User
 
 
 class RawToolsArgsParsingTestCase(SimpleTestCase):
+    def test_default_args_skip_reporter_quantification(self):
+        parsed = parse_rawtools_args(DEFAULT_RAWTOOLS_ARGS)
+
+        self.assertEqual(parsed, ["-p", "-x", "-u", "-l", "-m", "-chro", "12TB"])
+
     def test_parse_allows_quoted_values_with_spaces(self):
         parsed = parse_rawtools_args('-q -r "TMT 11" -chro "12 TB"')
 
@@ -72,6 +81,32 @@ class RawToolsArgsModelTestCase(TestCase):
 
 
 class RawToolsTaskExecutionTestCase(SimpleTestCase):
+    def test_rawtools_metrics_cmd_uses_metrics_file_as_completion_sentinel(self):
+        with TemporaryDirectory() as tmpdir:
+            raw = Path(tmpdir) / "sample.raw"
+            output_dir = Path(tmpdir) / "out"
+            raw.write_text("raw", encoding="utf-8")
+
+            self.assertIsNotNone(rawtools_metrics_cmd(str(raw), str(output_dir)))
+
+            output_dir.mkdir(exist_ok=True)
+            (output_dir / "sample.raw_Metrics.txt").write_text("ok", encoding="utf-8")
+
+            self.assertIsNone(rawtools_metrics_cmd(str(raw), str(output_dir)))
+
+    def test_rawtools_output_files_exist_does_not_require_matrix_output(self):
+        with TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            raw = output_dir / "sample.raw"
+            raw.write_text("raw", encoding="utf-8")
+            (output_dir / "sample.raw.mgf").write_text("mgf", encoding="utf-8")
+            (output_dir / "sample.raw_Metrics.txt").write_text("metrics", encoding="utf-8")
+            (output_dir / "sample.raw_Ms2_TIC_chromatogram.txt").write_text(
+                "tic", encoding="utf-8"
+            )
+
+            self.assertTrue(rawtools_output_files_exist(str(output_dir)))
+
     @patch("maxquant.tasks._run_cancelable_process")
     @patch("maxquant.tasks._defer_if_busy")
     @patch("maxquant.tasks._is_canceled_result", side_effect=[False, False])

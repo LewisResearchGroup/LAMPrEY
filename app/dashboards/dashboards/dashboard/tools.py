@@ -13,7 +13,7 @@ import numpy as np
 import dask.dataframe as dd
 
 from dash import dash_table as dt
-from dash.dash_table.Format import Format
+from dash.dash_table.Format import Format, Scheme
 
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
@@ -41,6 +41,10 @@ from api.views import (
 from maxquant.models import RawFile as RawFileModel
 from maxquant.serializers import PipelineSerializer
 from project.serializers import ProjectsNamesSerializer
+from omics.proteomics.maxquant.quality_control import (
+    is_integer_metric_name,
+    metric_display_precision,
+)
 
 
 from pycaret.anomaly import (
@@ -51,6 +55,7 @@ from pycaret.anomaly import (
 )
 
 URL = os.getenv("OMICS_URL", "http://localhost:8000")
+ANOMALY_SESSION_ID = int(os.getenv("PQC_ANOMALY_SESSION_ID", "42"))
 
 logging.info(f"Dashboard API URL:{URL}", file=sys.stderr)
 
@@ -131,10 +136,31 @@ def table_from_dataframe(
     row_selectable="multi",
     hidden_columns=None,
 ):
+    def _column_format(column_name):
+        series = df[column_name]
+        numeric = pd.to_numeric(series.dropna(), errors="coerce")
+        if numeric.empty or not numeric.notna().all():
+            return None
+        if is_integer_metric_name(column_name):
+            return Format(precision=0, scheme=Scheme.fixed)
+        precision = metric_display_precision(column_name)
+        if precision == 2 and np.allclose(numeric, np.round(numeric)):
+            return Format(precision=0, scheme=Scheme.fixed)
+        return Format(precision=precision, scheme=Scheme.fixed)
+
     return dt.DataTable(
         id=id,
         columns=[
-            {"name": i, "id": i, "format": Format(precision=2)} for i in df.columns
+            {
+                key: value
+                for key, value in {
+                    "name": column,
+                    "id": column,
+                    "format": _column_format(column),
+                }.items()
+                if value is not None
+            }
+            for column in df.columns
         ],
         data=df.iloc[::-1].to_dict("records"),
         sort_action="native",
@@ -906,10 +932,18 @@ def detect_anomalies(
     normalized_max_features = _normalize_max_features(max_features, len(selected_cols))
     if normalized_max_features is not None:
         model_kws["max_features"] = normalized_max_features
-    if "contamination" not in model_kws:
-        contamination = fraction if fraction is not None else percentage
-        if contamination is not None:
-            model_kws["contamination"] = float(contamination)
+    requested_fraction = model_kws.pop("fraction", None)
+    if requested_fraction is None and "contamination" in model_kws:
+        requested_fraction = model_kws.pop("contamination")
+    if requested_fraction is None:
+        requested_fraction = fraction if fraction is not None else percentage
+    if requested_fraction is not None:
+        requested_fraction = float(requested_fraction)
+        if requested_fraction <= 0:
+            requested_fraction = np.nextafter(0.0, 1.0)
+        elif requested_fraction >= 1:
+            requested_fraction = np.nextafter(1.0, 0.0)
+        model_kws["fraction"] = requested_fraction
     log_cols = [
         "Ms1MedianSummedIntensity",
         "Ms2MedianSummedIntensity",
@@ -952,10 +986,12 @@ def detect_anomalies(
         verbose=False,
         html=False,
         n_jobs=n_jobs,
+        session_id=ANOMALY_SESSION_ID,
         numeric_features=selected_cols,
     )
 
     logging.info(f"Create anomaly model: {algorithm}")
+    model_kws.setdefault("random_state", ANOMALY_SESSION_ID)
     model = create_model(algorithm, **model_kws)
     pipeline = get_config("pipeline")
     data = pipeline.transform(df_all)
