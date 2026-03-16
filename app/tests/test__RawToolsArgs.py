@@ -8,7 +8,7 @@ from django.test import SimpleTestCase, TestCase
 
 from maxquant.models import Pipeline
 from maxquant.rawtools import DEFAULT_RAWTOOLS_ARGS, normalize_rawtools_args, parse_rawtools_args
-from maxquant.tasks import rawtools_metrics
+from maxquant.tasks import rawtools_metrics, rawtools_qc, run_maxquant
 from omics.proteomics.rawtools.quality_control import (
     rawtools_metrics_cmd,
     rawtools_output_files_exist,
@@ -156,3 +156,39 @@ class RawToolsTaskExecutionTestCase(SimpleTestCase):
                 )
 
         self.assertEqual(mock_run.call_count, 0)
+
+    @patch("maxquant.tasks._warm_dashboard_caches")
+    @patch("maxquant.tasks._run_cancelable_process", return_value=0)
+    @patch("maxquant.tasks._defer_if_busy")
+    @patch("maxquant.tasks._is_canceled_result", side_effect=[False, False])
+    def test_rawtools_qc_warms_dashboard_cache_after_success(
+        self, _is_canceled, _defer_if_busy, _mock_run, mock_warm
+    ):
+        with TemporaryDirectory() as tmpdir:
+            rawtools_qc.run(
+                tmpdir,
+                str(Path(tmpdir) / "out"),
+                rerun=True,
+                result_id=123,
+            )
+
+        mock_warm.assert_called_once_with(123)
+
+    @patch("maxquant.tasks._warm_dashboard_caches")
+    @patch("maxquant.tasks._run_cancelable_process", return_value=0)
+    @patch("maxquant.tasks._defer_if_busy")
+    @patch("maxquant.tasks._is_canceled_result", side_effect=[False, False])
+    def test_run_maxquant_warms_dashboard_cache_after_success(
+        self, _is_canceled, _defer_if_busy, _mock_run, mock_warm
+    ):
+        with patch("maxquant.tasks.MaxquantRunner") as mock_runner:
+            mock_runner.return_value.run.return_value = "echo run-maxquant"
+
+            run_maxquant.run(
+                "sample.raw",
+                {"output_dir": "/tmp/out", "run_dir": "/tmp/run"},
+                rerun=True,
+                result_id=456,
+            )
+
+        mock_warm.assert_called_once_with(456)

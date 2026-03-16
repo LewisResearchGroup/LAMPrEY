@@ -15,12 +15,23 @@ from omics.proteomics.rawtools.quality_control import (
     rawtools_qc_cmd,
     rawtools_qc_spec,
 )
+from maxquant.dashboard_cache import warm_dashboard_caches_for_result
 
 PROCESS_TRACKING_FIELDS = {
     "maxquant": ("maxquant_pid", "maxquant_pgid"),
     "rawtools_metrics": ("rawtools_metrics_pid", "rawtools_metrics_pgid"),
     "rawtools_qc": ("rawtools_qc_pid", "rawtools_qc_pgid"),
 }
+
+
+def _warm_dashboard_caches(result_id):
+    if not result_id:
+        return
+    Result = apps.get_model("maxquant", "Result")
+    result = Result.objects.filter(pk=result_id).select_related("raw_file__pipeline__project").first()
+    if result is None:
+        return
+    warm_dashboard_caches_for_result(result)
 
 
 def _safe_float(env_name, default):
@@ -337,7 +348,7 @@ def rawtools_qc(self, input_dir, output_dir, rerun=False, result_id=None):
         logging.info(f"[rawtools_qc] {cmd}")
         print(f"[rawtools_qc] {cmd}")
         spec = rawtools_qc_spec(input_dir=input_dir, output_dir=output_dir)
-        _run_cancelable_process(
+        rc = _run_cancelable_process(
             spec["args"],
             kind="rawtools_qc",
             result_id=result_id,
@@ -346,6 +357,8 @@ def rawtools_qc(self, input_dir, output_dir, rerun=False, result_id=None):
             stdout_path=spec["stdout"],
             stderr_path=spec["stderr"],
         )
+        if rc == 0:
+            _warm_dashboard_caches(result_id)
 
 
 @shared_task(bind=True, max_retries=None)
@@ -372,7 +385,7 @@ def run_maxquant(self, raw_file, params, rerun=False, result_id=None):
     cmd = mq.run(raw_file, rerun=rerun, run=False)
     if cmd is None:
         return
-    _run_cancelable_process(
+    rc = _run_cancelable_process(
         cmd,
         kind="run_maxquant",
         result_id=result_id,
@@ -380,3 +393,5 @@ def run_maxquant(self, raw_file, params, rerun=False, result_id=None):
         shell=True,
         executable="/bin/bash",
     )
+    if rc == 0:
+        _warm_dashboard_caches(result_id)
