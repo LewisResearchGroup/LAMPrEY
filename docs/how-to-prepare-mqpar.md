@@ -98,7 +98,7 @@ LAMPrEY converts the single experiment entry into `__LABEL__`, then replaces tha
 
 ## Example from `mqpar_2.4.12.0.xml`
 
-The repository example at `mqpar_2.4.12.0.xml` already shows the required structure:
+The bundled example at `app/seed/defaults/config/mqpar_2.4.12.0.xml` already shows the required structure:
 
 - `<fastaFilePath>__FASTA__</fastaFilePath>`
 - `<string>__RAW__</string>` inside `<filePaths>`
