@@ -8,6 +8,7 @@ import logging
 import datetime
 import shlex
 import time
+import json
 
 from functools import lru_cache, cached_property
 
@@ -350,6 +351,78 @@ class Result(models.Model):
             df = pd.DataFrame()
         df["RawFile"] = P(self.raw_file.logical_name).with_suffix("").name
         return df.set_index("RawFile").reset_index()
+
+    @property
+    def dashboard_qc_cache_path(self):
+        return self.output_dir / "dashboard_qc_cache.json"
+
+    @property
+    def dashboard_qc_source_paths(self):
+        return [
+            self.output_dir_maxquant / "maxquant_quality_control.csv",
+            self.output_dir_rawtools_qc / "QcDataTable.csv",
+        ]
+
+    def dashboard_qc_cache_is_stale(self):
+        cache_path = self.dashboard_qc_cache_path
+        if not cache_path.is_file():
+            return True
+
+        cache_mtime = cache_path.stat().st_mtime
+        for source_path in self.dashboard_qc_source_paths:
+            if source_path.is_file() and source_path.stat().st_mtime > cache_mtime:
+                return True
+        return False
+
+    def _build_dashboard_qc_data(self):
+        rt = self.rawtools_qc_data()
+        mq = self.maxquant_qc_data()
+
+        rt = rt if rt is not None else pd.DataFrame()
+        mq = mq if mq is not None else pd.DataFrame()
+
+        if rt.empty and mq.empty:
+            return pd.DataFrame()
+        if rt.empty:
+            return mq.reset_index(drop=True)
+        if mq.empty:
+            return rt.reset_index(drop=True)
+
+        rt = rt.copy()
+        mq = mq.copy()
+        if "Index" in mq.columns:
+            mq = mq.drop(columns=["Index"])
+
+        merge_keys = ["RawFile"] if "RawFile" in rt.columns and "RawFile" in mq.columns else None
+        if merge_keys is None:
+            return pd.concat([rt.reset_index(drop=True), mq.reset_index(drop=True)], axis=1)
+        return pd.merge(rt, mq, on=merge_keys, how="outer").reset_index(drop=True)
+
+    def _write_dashboard_qc_cache(self, df):
+        cache_path = self.dashboard_qc_cache_path
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.loads(df.to_json(orient="records", date_format="iso"))
+        cache_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def _read_dashboard_qc_cache(self):
+        cache_path = self.dashboard_qc_cache_path
+        if not cache_path.is_file():
+            return pd.DataFrame()
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        df = pd.DataFrame(payload)
+        if "DateAcquired" in df.columns:
+            df["DateAcquired"] = pd.to_datetime(df["DateAcquired"], errors="coerce")
+        return df
+
+    def dashboard_qc_data(self, force_update=False):
+        if (not force_update) and (not self.dashboard_qc_cache_is_stale()):
+            return self._read_dashboard_qc_cache()
+
+        df = self._build_dashboard_qc_data()
+        if df is None:
+            df = pd.DataFrame()
+        self._write_dashboard_qc_cache(df)
+        return df
 
     @property
     def parquet_path(self):

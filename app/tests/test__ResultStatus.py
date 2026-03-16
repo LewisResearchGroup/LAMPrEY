@@ -1,9 +1,11 @@
 from pathlib import Path
 from unittest.mock import patch
 from types import SimpleNamespace
+import os
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+import pandas as pd
 
 from maxquant.models import Pipeline, RawFile, Result
 from project.models import Project
@@ -289,3 +291,54 @@ class ResultStatusTestCase(TestCase):
         self.assertEqual(mock_qc_delay.call_count, 1)
         self.assertTrue(mock_metrics_delay.call_args.kwargs["rerun"])
         self.assertTrue(mock_qc_delay.call_args.kwargs["rerun"])
+
+    def test_dashboard_qc_data_uses_cache_when_fresh(self):
+        raw_df = pd.DataFrame(
+            [{"RawFile": self.raw_file.name, "DateAcquired": pd.Timestamp("2024-01-01"), "MetricA": 1.0}]
+        )
+        mq_df = pd.DataFrame([{"RawFile": self.raw_file.name, "MetricB": 2.0}])
+
+        with patch.object(Result, "rawtools_qc_data", return_value=raw_df) as mock_rt:
+            with patch.object(Result, "maxquant_qc_data", return_value=mq_df) as mock_mq:
+                first = self.result.dashboard_qc_data(force_update=True)
+
+        self.assertEqual(mock_rt.call_count, 1)
+        self.assertEqual(mock_mq.call_count, 1)
+        self.assertTrue(self.result.dashboard_qc_cache_path.is_file())
+        self.assertEqual(first.loc[0, "MetricA"], 1.0)
+        self.assertEqual(first.loc[0, "MetricB"], 2.0)
+
+        with patch.object(Result, "rawtools_qc_data", side_effect=AssertionError("should use cache")):
+            with patch.object(Result, "maxquant_qc_data", side_effect=AssertionError("should use cache")):
+                second = self.result.dashboard_qc_data()
+
+        self.assertEqual(second.loc[0, "MetricA"], 1.0)
+        self.assertEqual(second.loc[0, "MetricB"], 2.0)
+
+    def test_dashboard_qc_data_refreshes_when_source_is_newer_than_cache(self):
+        initial_raw_df = pd.DataFrame(
+            [{"RawFile": self.raw_file.name, "DateAcquired": pd.Timestamp("2024-01-01"), "MetricA": 1.0}]
+        )
+        initial_mq_df = pd.DataFrame([{"RawFile": self.raw_file.name, "MetricB": 2.0}])
+        updated_raw_df = pd.DataFrame(
+            [{"RawFile": self.raw_file.name, "DateAcquired": pd.Timestamp("2024-01-01"), "MetricA": 10.0}]
+        )
+        updated_mq_df = pd.DataFrame([{"RawFile": self.raw_file.name, "MetricB": 20.0}])
+
+        with patch.object(Result, "rawtools_qc_data", return_value=initial_raw_df):
+            with patch.object(Result, "maxquant_qc_data", return_value=initial_mq_df):
+                self.result.dashboard_qc_data(force_update=True)
+
+        source_path = self.result.output_dir_rawtools_qc / "QcDataTable.csv"
+        self._write_file(source_path, "updated")
+        future_time = self.result.dashboard_qc_cache_path.stat().st_mtime + 5
+        os.utime(source_path, (future_time, future_time))
+
+        with patch.object(Result, "rawtools_qc_data", return_value=updated_raw_df) as mock_rt:
+            with patch.object(Result, "maxquant_qc_data", return_value=updated_mq_df) as mock_mq:
+                refreshed = self.result.dashboard_qc_data()
+
+        self.assertEqual(mock_rt.call_count, 1)
+        self.assertEqual(mock_mq.call_count, 1)
+        self.assertEqual(refreshed.loc[0, "MetricA"], 10.0)
+        self.assertEqual(refreshed.loc[0, "MetricB"], 20.0)

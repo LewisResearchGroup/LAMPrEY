@@ -102,6 +102,17 @@ class TestMaxquantQualityControl:
             "TMT9_missing_values",
             "TMT10_missing_values",
             "TMT11_missing_values",
+            "TMT1_protein_group_count",
+            "TMT2_protein_group_count",
+            "TMT3_protein_group_count",
+            "TMT4_protein_group_count",
+            "TMT5_protein_group_count",
+            "TMT6_protein_group_count",
+            "TMT7_protein_group_count",
+            "TMT8_protein_group_count",
+            "TMT9_protein_group_count",
+            "TMT10_protein_group_count",
+            "TMT11_protein_group_count",
         ]
 
         assert len(expected_ndx) - len(actual_ndx) == 0, (
@@ -219,6 +230,17 @@ class TestMaxquantQualityControl:
             "Uncalibrated - Calibrated m/z [Da] (sd)",
             "Peak Width(ave)",
             "Peak Width (std)",
+            "TMT1_peptide_count",
+            "TMT2_peptide_count",
+            "TMT3_peptide_count",
+            "TMT4_peptide_count",
+            "TMT5_peptide_count",
+            "TMT6_peptide_count",
+            "TMT7_peptide_count",
+            "TMT8_peptide_count",
+            "TMT9_peptide_count",
+            "TMT10_peptide_count",
+            "TMT11_peptide_count",
         ]
 
         assert len(expected_ndx) - len(actual_ndx) == 0, (
@@ -302,6 +324,28 @@ class TestMaxquantQualityControl:
             "Uncalibrated - Calibrated m/z [Da] (sd)",
             "Peak Width(ave)",
             "Peak Width (std)",
+            "TMT1_protein_group_count",
+            "TMT2_protein_group_count",
+            "TMT3_protein_group_count",
+            "TMT4_protein_group_count",
+            "TMT5_protein_group_count",
+            "TMT6_protein_group_count",
+            "TMT7_protein_group_count",
+            "TMT8_protein_group_count",
+            "TMT9_protein_group_count",
+            "TMT10_protein_group_count",
+            "TMT11_protein_group_count",
+            "TMT1_peptide_count",
+            "TMT2_peptide_count",
+            "TMT3_peptide_count",
+            "TMT4_peptide_count",
+            "TMT5_peptide_count",
+            "TMT6_peptide_count",
+            "TMT7_peptide_count",
+            "TMT8_peptide_count",
+            "TMT9_peptide_count",
+            "TMT10_peptide_count",
+            "TMT11_peptide_count",
             "RUNDIR",
         ]
 
@@ -315,6 +359,80 @@ class TestMaxquantQualityControl:
 
         for idx in range(1, channels + 1):
             assert f"TMT{idx}_missing_values" in out.index
+            assert f"TMT{idx}_protein_group_count" in out.index
+
+    def test__evidence_reports_tmt_peptide_counts(self, tmp_path):
+        _write_tsv(
+            tmp_path,
+            "evidence.txt",
+            [
+                {
+                    "Sequence": "PEPTIDEA",
+                    "Reporter intensity corrected 1": 10,
+                    "Reporter intensity corrected 2": 0,
+                },
+                {
+                    "Sequence": "PEPTIDEB",
+                    "Reporter intensity corrected 1": 20,
+                    "Reporter intensity corrected 2": 5,
+                },
+                {
+                    "Sequence": "PEPTIDEB",
+                    "Reporter intensity corrected 1": 0,
+                    "Reporter intensity corrected 2": 15,
+                },
+            ],
+        )
+
+        out = maxquant_qc_evidence(tmp_path, pept_list=None)
+
+        assert out["TMT1_peptide_count"] == 2
+        assert out["TMT2_peptide_count"] == 1
+
+    def test__protein_groups_report_tmt_protein_group_counts(self, tmp_path):
+        _write_tsv(
+            tmp_path,
+            "proteinGroups.txt",
+            [
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Majority protein IDs": "P1",
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 50.0,
+                    "Score": 10.0,
+                    "Q-value": 0.001,
+                    "Peptides": 2,
+                    "Unique peptides": 2,
+                    "Razor + unique peptides": 2,
+                    "MS/MS count": 4,
+                    "Unique sequence coverage [%]": 20.0,
+                    "Reporter intensity corrected 1": 10,
+                    "Reporter intensity corrected 2": 0,
+                },
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Majority protein IDs": "P2",
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 40.0,
+                    "Score": 12.0,
+                    "Q-value": 0.002,
+                    "Peptides": 3,
+                    "Unique peptides": 3,
+                    "Razor + unique peptides": 3,
+                    "MS/MS count": 5,
+                    "Unique sequence coverage [%]": 30.0,
+                    "Reporter intensity corrected 1": 0,
+                    "Reporter intensity corrected 2": 25,
+                },
+            ],
+        )
+
+        out = maxquant_qc_protein_groups(tmp_path, protein=None)
+
+        assert out["TMT1_protein_group_count"] == 1
+        assert out["TMT2_protein_group_count"] == 1
 
     def test__maxquant_qc_csv_regenerates_stale_cache(self, tmp_path):
         shutil.copytree(PATH, tmp_path, dirs_exist_ok=True)

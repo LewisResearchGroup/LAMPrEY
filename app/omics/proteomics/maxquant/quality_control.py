@@ -411,6 +411,36 @@ def _reporter_intensity_columns(df):
     )
 
 
+def _reporter_channel_columns(reporter_cols):
+    channel_map = {}
+    for col in reporter_cols:
+        match = re.search(r"\b(\d+)\b", str(col))
+        if match is None:
+            continue
+        channel_no = int(match.group(1))
+        channel_map.setdefault(channel_no, []).append(col)
+    return channel_map
+
+
+def _detected_reporter_channel_counts(df, reporter_cols, id_col=None):
+    if df.empty or not reporter_cols:
+        return {}
+
+    channel_map = _reporter_channel_columns(reporter_cols)
+    result = {}
+    for channel_no in sorted(channel_map):
+        cols = channel_map[channel_no]
+        channel_values = df[cols].apply(pd.to_numeric, errors="coerce")
+        detected = channel_values.max(axis=1, skipna=True).fillna(0) > 0
+        if id_col is not None and id_col in df.columns:
+            ids = df.loc[detected, id_col].dropna().astype(str).str.strip()
+            ids = ids[ids != ""]
+            result[channel_no] = int(ids.nunique())
+        else:
+            result[channel_no] = int(detected.sum())
+    return result
+
+
 def _tmt_missing_value_columns(df):
     cols = [
         c
@@ -587,6 +617,18 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
     if len(m_v) != 0:
         dic_m_v = {f"TMT{i + 1}_missing_values": v for i, v in enumerate(m_v)}
         result.update(dic_m_v)
+    if reporter_cols:
+        protein_group_counts = _detected_reporter_channel_counts(
+            df1,
+            reporter_cols,
+            id_col="Majority protein IDs" if "Majority protein IDs" in df1.columns else None,
+        )
+        result.update(
+            {
+                f"TMT{channel_no}_protein_group_count": count
+                for channel_no, count in protein_group_counts.items()
+            }
+        )
 
     # Group-specific QC3_BSA metrics are temporarily disabled.
     # if protein is None:
@@ -752,6 +794,19 @@ def maxquant_qc_evidence(txt_path, pept_list=None):
             df, "Retention length", lambda s: s.std(ddof=0, skipna=True)
         ),
     }
+    reporter_cols = _reporter_intensity_columns(df)
+    if reporter_cols:
+        peptide_counts = _detected_reporter_channel_counts(
+            df,
+            reporter_cols,
+            id_col="Sequence" if "Sequence" in df.columns else None,
+        )
+        result.update(
+            {
+                f"TMT{channel_no}_peptide_count": count
+                for channel_no, count in peptide_counts.items()
+            }
+        )
 
     # Group-specific QC1/QC2/QC3 peptide metrics are temporarily disabled.
     # if pept_list is None:

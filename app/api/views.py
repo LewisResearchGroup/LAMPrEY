@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import logging
 import re
+from time import perf_counter
+from tempfile import NamedTemporaryFile
 
 import dask.dataframe as dd
 
@@ -86,6 +88,112 @@ def _results_for_pipeline_mutation(user, pipeline):
     if _is_admin(user):
         return queryset.distinct()
     return queryset.filter(raw_file__created_by_id=user.id).distinct()
+
+
+def _pipeline_dashboard_qc_cache_path(pipeline):
+    return pipeline.path / "dashboard_qc_scope_cache.json"
+
+
+def _write_pipeline_dashboard_qc_cache(cache_path, df):
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(json.loads(df.to_json(orient="records", date_format="iso")))
+    with NamedTemporaryFile("w", encoding="utf-8", dir=str(cache_path.parent), delete=False) as handle:
+        handle.write(payload)
+        temp_name = handle.name
+    P(temp_name).replace(cache_path)
+
+
+def _read_pipeline_dashboard_qc_cache(cache_path):
+    if not cache_path.is_file():
+        return pd.DataFrame()
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    df = pd.DataFrame(payload)
+    if "DateAcquired" in df.columns:
+        df["DateAcquired"] = pd.to_datetime(df["DateAcquired"], errors="coerce")
+    return df
+
+
+def _pipeline_dashboard_qc_cache_is_stale(pipeline, results):
+    cache_path = _pipeline_dashboard_qc_cache_path(pipeline)
+    if not cache_path.is_file():
+        return True
+
+    cache_mtime = cache_path.stat().st_mtime
+    cached_rows = _read_pipeline_dashboard_qc_cache(cache_path)
+    if len(cached_rows.index) != len(results):
+        return True
+
+    for result in results:
+        if result.dashboard_qc_cache_is_stale():
+            return True
+        run_cache = result.dashboard_qc_cache_path
+        if not run_cache.is_file():
+            return True
+        if run_cache.stat().st_mtime > cache_mtime:
+            return True
+    return False
+
+
+def _build_pipeline_dashboard_qc_cache(pipeline, results):
+    frames = []
+    for result in results:
+        df = result.dashboard_qc_data()
+        if df is None or df.empty:
+            continue
+        df = df.copy()
+        df["RunKey"] = f"rf{result.raw_file_id}"
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    return _sort_dashboard_qc_scope(combined)
+
+
+def _sort_dashboard_qc_scope(frame):
+    if frame is None or frame.empty:
+        return frame
+
+    df = frame.copy()
+    sort_columns = []
+    ascending = []
+
+    if "DateAcquired" in df.columns:
+        df["DateAcquired"] = pd.to_datetime(df["DateAcquired"], errors="coerce")
+        sort_columns.append("DateAcquired")
+        ascending.append(True)
+
+    if "RawFile" in df.columns:
+        raw_series = df["RawFile"].fillna("").astype(str)
+        df["_rawfile_sort"] = raw_series.str.lower()
+        sort_columns.append("_rawfile_sort")
+        ascending.append(True)
+
+    if "RunKey" in df.columns:
+        df["_runkey_sort"] = df["RunKey"].fillna("").astype(str)
+        sort_columns.append("_runkey_sort")
+        ascending.append(True)
+
+    if sort_columns:
+        df = df.sort_values(sort_columns, ascending=ascending, na_position="last").reset_index(drop=True)
+
+    if "Index" in df.columns:
+        df["Index"] = np.arange(1, len(df) + 1, dtype=int)
+
+    return df.drop(columns=["_rawfile_sort", "_runkey_sort"], errors="ignore")
+
+
+def _pipeline_dashboard_qc_data(pipeline):
+    results = list(
+        Result.objects.filter(raw_file__pipeline=pipeline)
+        .select_related("raw_file__created_by")
+        .order_by("raw_file__created", "raw_file_id")
+    )
+    cache_path = _pipeline_dashboard_qc_cache_path(pipeline)
+    if _pipeline_dashboard_qc_cache_is_stale(pipeline, results):
+        df = _build_pipeline_dashboard_qc_cache(pipeline, results)
+        _write_pipeline_dashboard_qc_cache(cache_path, df)
+        return df
+    return _read_pipeline_dashboard_qc_cache(cache_path)
 
 
 class ProjectNames(generics.ListAPIView):
@@ -524,115 +632,7 @@ def get_protein_groups_data(
     return df
 
 def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
-    def _extract_tmt_peptide_counts(result_obj):
-        """Count detected peptides per TMT channel from evidence.txt for a run."""
-        fn = result_obj.output_dir_maxquant / "evidence.txt"
-        if not fn.is_file():
-            return {}
-        try:
-            header = pd.read_csv(fn, sep="\t", nrows=0)
-        except Exception:
-            return {}
-
-        available = list(header.columns)
-        reporter_cols = [
-            c for c in available
-            if isinstance(c, str) and c.startswith("Reporter intensity corrected ")
-        ]
-        if len(reporter_cols) == 0:
-            return {}
-
-        usecols = list(reporter_cols)
-        has_sequence = "Sequence" in available
-        if has_sequence:
-            usecols.append("Sequence")
-        try:
-            evidence = pd.read_csv(fn, sep="\t", usecols=usecols, low_memory=False)
-        except Exception:
-            return {}
-        if evidence.empty:
-            return {}
-
-        channel_to_cols = {}
-        for col in reporter_cols:
-            match = re.search(r"\b(\d+)\b", str(col))
-            if match is None:
-                continue
-            channel_no = int(match.group(1))
-            channel_to_cols.setdefault(channel_no, []).append(col)
-
-        out = {}
-        for channel_no in sorted(channel_to_cols):
-            cols = channel_to_cols[channel_no]
-            channel_values = evidence[cols].apply(pd.to_numeric, errors="coerce")
-            # Prefer max across duplicate channel columns (e.g. experiment suffixes).
-            detected = channel_values.max(axis=1, skipna=True).fillna(0) > 0
-            if has_sequence:
-                seq = evidence.loc[detected, "Sequence"].dropna().astype(str).str.strip()
-                seq = seq[seq != ""]
-                count = int(seq.nunique())
-            else:
-                count = int(detected.sum())
-            out[f"TMT{channel_no}_peptide_count"] = count
-
-        return out
-
-    def _extract_tmt_protein_group_counts(result_obj):
-        """Count detected protein groups per TMT channel from proteinGroups.txt for a run."""
-        fn = result_obj.output_dir_maxquant / "proteinGroups.txt"
-        if not fn.is_file():
-            return {}
-        try:
-            header = pd.read_csv(fn, sep="\t", nrows=0)
-        except Exception:
-            return {}
-
-        available = list(header.columns)
-        reporter_cols = [
-            c for c in available
-            if isinstance(c, str) and c.startswith("Reporter intensity corrected ")
-        ]
-        if len(reporter_cols) == 0:
-            return {}
-
-        id_col = None
-        for candidate in ["Majority protein IDs", "Protein IDs"]:
-            if candidate in available:
-                id_col = candidate
-                break
-
-        usecols = list(reporter_cols)
-        if id_col is not None:
-            usecols.append(id_col)
-        try:
-            proteins = pd.read_csv(fn, sep="\t", usecols=usecols, low_memory=False)
-        except Exception:
-            return {}
-        if proteins.empty:
-            return {}
-
-        channel_to_cols = {}
-        for col in reporter_cols:
-            match = re.search(r"\b(\d+)\b", str(col))
-            if match is None:
-                continue
-            channel_no = int(match.group(1))
-            channel_to_cols.setdefault(channel_no, []).append(col)
-
-        out = {}
-        for channel_no in sorted(channel_to_cols):
-            cols = channel_to_cols[channel_no]
-            channel_values = proteins[cols].apply(pd.to_numeric, errors="coerce")
-            detected = channel_values.max(axis=1, skipna=True).fillna(0) > 0
-            if id_col is not None:
-                ids = proteins.loc[detected, id_col].dropna().astype(str).str.strip()
-                ids = ids[ids != ""]
-                count = int(ids.nunique())
-            else:
-                count = int(detected.sum())
-            out[f"TMT{channel_no}_protein_group_count"] = count
-
-        return out
+    load_started = perf_counter()
 
     def _normalize_index_column(frame):
         if frame is None or frame.empty:
@@ -658,18 +658,28 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
     ).first()
     if pipeline is None:
         raise PermissionDenied("Missing permissions for requested pipeline.")
-    results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
+    all_qc_load_started = perf_counter()
+    qc_scope = _pipeline_dashboard_qc_data(pipeline)
+    logging.warning(
+        "[perf] Pipeline QC cache load project=%s pipeline=%s rows=%s elapsed=%.3fs",
+        project_slug,
+        pipeline_slug,
+        len(qc_scope.index),
+        perf_counter() - all_qc_load_started,
+    )
+
+    results = _results_for_user(user).filter(raw_file__pipeline=pipeline).select_related(
+        "raw_file__created_by"
+    )
     n_results = len(results)
 
     if isinstance(data_range, int) and (n_results > data_range) and (n_results > 0):
         results = results.order_by("raw_file__created")[len(results) - data_range :]
 
-    mqs = []
-    rts = []
-
     metadata_rows = []
-    tmt_peptide_rows = []
+    selected_run_keys = []
     for result in results:
+        run_started = perf_counter()
         raw_fn = P(result.raw_file.logical_name).with_suffix("").name
         raw_is_flagged = result.raw_file.flagged
         raw_use_downstream = result.raw_file.use_downstream
@@ -687,57 +697,25 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
                 "Uploader": raw_uploader,
             }
         )
-        tmt_peptide_rows.append(
-            {
-                "RunKey": f"rf{raw_file_id}",
-                **_extract_tmt_peptide_counts(result),
-                **_extract_tmt_protein_group_counts(result),
-            }
+        selected_run_keys.append(f"rf{raw_file_id}")
+        logging.warning(
+            "[perf] QC run load project=%s pipeline=%s run_key=rf%s raw_file=%s elapsed=%.3fs",
+            project_slug,
+            pipeline_slug,
+            raw_file_id,
+            raw_fn,
+            perf_counter() - run_started,
         )
-        try:
-            rt_df = result.rawtools_qc_data()
-            if rt_df is not None and not rt_df.empty:
-                rt_df = rt_df.copy()
-                rt_df["RunKey"] = f"rf{raw_file_id}"
-                rts.append(rt_df)
-        except Exception as e:
-            logging.warning(f"{e}: {result.raw_file.name} rawtools_qc_data")
-        try:
-            mq_df = result.maxquant_qc_data()
-            if mq_df is not None and not mq_df.empty:
-                mq_df = mq_df.copy()
-                mq_df["RunKey"] = f"rf{raw_file_id}"
-                mqs.append(mq_df)
-        except Exception as e:
-            logging.warning(f"{e}: {result.raw_file.name} maxquant_qc_data")
-
-    rt = pd.concat(rts) if len(rts) > 0 else None
-    mq = pd.concat(mqs) if len(mqs) > 0 else None
-
-    del rts, mqs
-
-    if rt is not None:
-        try:
-            rt["Index"] = rt["DateAcquired"].rank()
-        except KeyError as e:
-            logging.error(f"{e}: {rt}")
 
     metadata = pd.DataFrame(metadata_rows)
-    tmt_peptide_df = pd.DataFrame(tmt_peptide_rows)
-
-    if (rt is None) and (mq is not None):
-        df = mq
-    elif (rt is not None) and (mq is None):
-        df = rt
-    elif (rt is None) and (mq is None):
+    if qc_scope is None or qc_scope.empty:
         return None
-    else:
-        if "Index" in mq.columns:
-            mq = mq.drop("Index", axis=1)
-        merge_keys = ["RunKey"]
-        if "RawFile" in rt.columns and "RawFile" in mq.columns:
-            merge_keys.append("RawFile")
-        df = pd.merge(rt, mq, on=merge_keys, how="outer")
+    df = qc_scope.copy()
+    if "RunKey" in df.columns:
+        df = df[df["RunKey"].isin(selected_run_keys)].copy()
+        if df.empty:
+            return None
+        df = _sort_dashboard_qc_scope(df)
 
     # Fallback: if RunKey was dropped upstream but shape matches one-row-per-run,
     # restore it from metadata so uploader enrichment remains possible.
@@ -774,18 +752,6 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
         if "RawFile_meta" in df.columns:
             df = df.drop(columns=["RawFile_meta"])
 
-    if (
-        tmt_peptide_df is not None
-        and not tmt_peptide_df.empty
-        and "RunKey" in df.columns
-    ):
-        df = pd.merge(
-            df,
-            tmt_peptide_df,
-            on=["RunKey"],
-            how="left",
-        )
-
     # Final fallback: fill uploader directly from RunKey mapping when merge
     # produced missing values.
     if metadata is not None and not metadata.empty and "RunKey" in df.columns:
@@ -821,14 +787,22 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
                     mapped_by_raw,
                 )
 
-    if "Index" in df.columns:
-        df = df.sort_values("Index", ascending=True, na_position="last")
+    df = _sort_dashboard_qc_scope(df)
     df = _normalize_index_column(df)
 
     if "DateAcquired" in df.columns:
         df["DateAcquired"] = df["DateAcquired"].view(np.int64)
 
     assert df.columns.value_counts().max() == 1, df.columns.value_counts()
+
+    logging.warning(
+        "[perf] QC scope assembled project=%s pipeline=%s runs=%s columns=%s elapsed=%.3fs",
+        project_slug,
+        pipeline_slug,
+        len(df.index),
+        len(df.columns),
+        perf_counter() - load_started,
+    )
 
     return df
 
