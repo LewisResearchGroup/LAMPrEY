@@ -7,7 +7,12 @@ except ImportError:  # graceful fallback if dependency missing
     def register_plotly_resampler():
         return None
 
-colors = ["rgba(100, 0, 0, 0.5)", "rgba(0, 100, 0, 0.5)", "rgba(0, 0, 100, 0.5)"]
+colors = ["#167c80", "#dd6b4d", "#345c73"]
+fills = [
+    "rgba(22, 124, 128, 0.14)",
+    "rgba(221, 107, 77, 0.14)",
+    "rgba(52, 92, 115, 0.12)",
+]
 DEFAULT_MAX_SAMPLES = 1000  # how many points to show per trace when resampling
 
 set_template()
@@ -27,12 +32,16 @@ def lines_plot(rawtools_matrix, cols, colors=colors, title=None, **kwargs):
         fig = go.Figure()
 
     for i, col in enumerate(cols):
+        color = colors[i % len(colors)]
         trace = go.Scattergl(  # Scattergl for better performance on dense series
             x=rawtools_matrix.index,
             y=rawtools_matrix[col],
             name=col,
             mode="lines",
-            line=dict(width=0.5, color=colors[i]),
+            line=dict(width=1.5, color=color),
+            fill="tozeroy",
+            fillcolor=fills[i % len(fills)],
+            hovertemplate="%{x:.2f}<br>%{y:.3s}<extra></extra>",
             **kwargs
         )
         if FigureResampler and isinstance(fig, FigureResampler):
@@ -44,11 +53,10 @@ def lines_plot(rawtools_matrix, cols, colors=colors, title=None, **kwargs):
         legend_title_text="",
         autosize=True,
         title=title,
-        legend=dict(orientation="h"),
-        margin=dict(l=70, r=10, b=50, t=50, pad=0),
+        margin=dict(l=60, r=20, b=54, t=66, pad=0),
     )
 
-    fig.update_xaxes(title_text=rawtools_matrix.index.name)
+    fig.update_xaxes(title_text=rawtools_matrix.index.name, automargin=True)
     fig.update_yaxes(ticks="outside", ticklen=8, automargin=True)
 
     return fig
@@ -74,22 +82,24 @@ def histograms(
                 nbinsx=nbinsx,
                 visible="legendonly" if i > 0 else None,
                 name=col,
-                marker_color=colors[i],
+                marker_color=colors[i % len(colors)],
+                marker_line_color="#ffffff",
+                marker_line_width=0.8,
             )
         )
     fig.update_layout(legend_title_text="")
     fig.update_layout(barmode="overlay")
-    fig.update_traces(opacity=0.75)
+    fig.update_traces(opacity=0.82)
     fig.update_layout(title=title)
 
     fig.update_layout(
         legend_title_text="",
         autosize=True,
         title=title,
-        legend=dict(orientation="h"),
-        margin=dict(l=70, r=10, b=50, t=50, pad=0),
+        margin=dict(l=60, r=20, b=54, t=66, pad=0),
     )
 
     fig.update_yaxes(ticks="outside", ticklen=8, automargin=True)
+    fig.update_xaxes(automargin=True)
 
     return fig
