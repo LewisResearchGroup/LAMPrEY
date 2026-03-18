@@ -4,8 +4,8 @@ The **Dashboard** section provides the cross-run analytical view of a pipeline. 
 
 The Dashboard consists of two panels:
 
-- The <span style="color: #00fff6;">left panel</span> includes summary stats for the runs contained within the selected pipeline.
-- The <span style="color: #ff7600;">right panel</span> includes the working area with three tabs: QC Plots, Anomaly detection, and Protein explorer.
+- The <span style="color: #2b8fd3;">left panel</span> includes summary stats for the runs contained within the selected pipeline.
+- The <span style="color: #0f9d93;">right panel</span> includes the working area with three tabs: QC Plots, Anomaly detection, and Protein explorer.
 
 ![](img/dashboard_panels.png)
 
