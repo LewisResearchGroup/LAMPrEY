@@ -84,16 +84,24 @@
 }
 
 .home-login-field input {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  display: block;
   width: 100%;
-  min-height: 40px;
+  height: 44px;
+  min-height: 44px;
+  line-height: 1.2;
   padding: 8px 10px;
   border: 1px solid #b7cada;
   border-radius: 8px;
   background: #fff;
+  font: inherit;
 }
 
 .home-login-submit {
   min-height: 40px;
+  width: 100%;
 }
 
 .home-login-meta {

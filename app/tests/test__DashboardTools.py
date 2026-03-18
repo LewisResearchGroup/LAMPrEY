@@ -31,6 +31,7 @@ from dashboards.dashboards.dashboard.tools import (
     get_qc_data,
     set_rawfile_action,
 )
+from api.views import get_qc_data as api_get_qc_scope_data
 from maxquant.models import Pipeline, RawFile
 from project.models import Project
 from user.models import User
@@ -555,6 +556,92 @@ class DashboardToolsTestCase(SimpleTestCase):
         self.assertNotIn("Month", available)
         self.assertNotIn("TMT1_peptide_count", available)
         self.assertNotIn("TMT1_protein_group_count", available)
+
+
+class DashboardPipelineCacheTestCase(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="dashboard-cache@example.com", password="pass1234"
+        )
+        self.project = Project.objects.create(
+            name="Dashboard Cache Project",
+            description="Dashboard cache test project",
+            created_by=self.user,
+        )
+        self.pipeline = Pipeline.objects.create(
+            name="dashboard-cache-pipeline",
+            project=self.project,
+            created_by=self.user,
+            fasta_file=SimpleUploadedFile("cache.fasta", b">protein\nSEQUENCE"),
+            mqpar_file=SimpleUploadedFile("cache.xml", b"<mqpar></mqpar>"),
+        )
+        self.raw_file = RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("cache_case.raw", b"..."),
+            created_by=self.user,
+        )
+        self.result = self.raw_file.result
+
+    def test_api_get_qc_data_uses_pipeline_cache_when_warm(self):
+        per_run_df = pd.DataFrame(
+            [
+                {
+                    "RawFile": self.raw_file.logical_name.replace(".raw", ""),
+                    "DateAcquired": pd.Timestamp("2024-01-01"),
+                    "Index": 1,
+                    "N_peptides": 123,
+                }
+            ]
+        )
+
+        with patch.object(type(self.result), "rawtools_qc_data", return_value=per_run_df) as mock_rt:
+            with patch.object(type(self.result), "maxquant_qc_data", return_value=pd.DataFrame()):
+                self.result.dashboard_qc_data(force_update=True)
+
+        with patch.object(type(self.result), "dashboard_qc_data", return_value=per_run_df) as mock_build:
+            first = api_get_qc_scope_data(self.project.slug, self.pipeline.slug, user=self.user)
+
+        self.assertEqual(mock_build.call_count, 1)
+        self.assertEqual(mock_rt.call_count, 1)
+        self.assertEqual(int(first.loc[0, "N_peptides"]), 123)
+
+        with patch.object(type(self.result), "dashboard_qc_data", side_effect=AssertionError("should use pipeline cache")):
+            second = api_get_qc_scope_data(self.project.slug, self.pipeline.slug, user=self.user)
+
+        self.assertEqual(int(second.loc[0, "N_peptides"]), 123)
+
+    def test_api_get_qc_data_orders_by_acquisition_date_then_rawfile(self):
+        other_raw = RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("cache_case_b.raw", b"..."),
+            created_by=self.user,
+        )
+        other_result = other_raw.result
+
+        def _qc_frame(raw_name, acquired, value):
+            return pd.DataFrame(
+                [
+                    {
+                        "RawFile": raw_name,
+                        "DateAcquired": pd.Timestamp(acquired),
+                        "Index": 99,
+                        "N_peptides": value,
+                    }
+                ]
+            )
+
+        with patch.object(
+            type(self.result),
+            "dashboard_qc_data",
+            side_effect=[
+                _qc_frame("cache_case_b", "2024-01-02 10:00:00", 200),
+                _qc_frame("cache_case", "2024-01-02 10:00:00", 100),
+            ],
+        ):
+            df = api_get_qc_scope_data(self.project.slug, self.pipeline.slug, user=self.user)
+
+        self.assertEqual(df["RawFile"].tolist(), ["cache_case", "cache_case_b"])
+        self.assertEqual(df["Index"].tolist(), [1, 2])
 
     @patch("dashboards.dashboards.dashboard.anomaly.T.set_rawfile_action")
     def test__apply_anomaly_flag_changes_applies_flag_and_unflag_actions(self, mock_action):

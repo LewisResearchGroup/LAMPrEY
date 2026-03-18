@@ -20,53 +20,63 @@ The bundled assets are intentionally small. They are meant to support onboarding
 Use the demo to:
 
 - verify that the installation completed successfully
-- explore the pipeline detail page and run-status table
-- open the dashboard and review seeded QC metrics and plots
-- inspect how MaxQuant and RawTools outputs are presented in the web UI
+- understand the overall architecture before configuring your own environment
+- move through the main application sections with safe seeded data
+- open the dashboard and inspect seeded QC behavior without uploading anything
 
 ## Explore the demo
 
 After first-time setup, the demo is the easiest way to understand the application without creating any new resources.
 
+Use it as a guided tour, not as the full explanation of each component.
+
+For the detailed behavior of each area, use the linked documentation pages rather than treating this page as the full reference.
+
 ### Projects page
 
-Start from the project list.
+Start from the project list and open the seeded demo project.
 
-- open the seeded demo project
-- review how projects group pipelines and organize work
-- use this page as the top-level entry point into the proteomics workflows
+For the full description of the project and pipeline workflow, see [Main](main.md).
 
 ![](img/demo_projects.png)
 
 ### Pipeline page
 
-Inside the demo project, open the `TMT QC Demo` pipeline.
+Inside the demo project, open the `TMT QC Demo` pipeline to see the seeded runs and the standard pipeline workflow.
 
-- review the pipeline header and description
-- inspect the seeded run list
-- see how run status is broken down into overall, MaxQuant, RawTools metrics, and RawTools QC states
+For the full description of this operational view, see [Main](main.md).
 
 ![](img/demo_pipelines.png)
 
 ### Upload page
 
-The pipeline page also shows the upload area that would normally be used for new `.raw` files.
+The demo pipeline also shows the upload area, but it is intentionally disabled because the seeded pipeline is read-only.
 
-- in the demo pipeline, uploads are intentionally disabled
-- the disabled state shows what a read-only seeded pipeline looks like
-- use a non-demo pipeline when you want to submit your own files
+For pipeline configuration and upload setup, see [Admin panel](how-to-access-the-admin-panel.md) and [Main](main.md).
 
 ![](img/demo_uploads.png)
 
 ### Results pages
 
-Open any of the seeded demo runs from the pipeline table.
+Open any seeded run from the pipeline table to inspect the run-level outputs.
 
-- inspect the run detail page
-- review the generated MaxQuant and RawTools outputs
-- use the dashboard to explore the same seeded data from an aggregate QC perspective
+For run-level navigation and result pages, see [Main](main.md). For cross-run analytical views, see [Dashboard](dashboard.md).
 
 ![](img/demo_results.png)
+
+## Use the demo with the architecture in mind
+
+The demo is most useful as a lightweight tour of the platform structure:
+
+- **Admin panel**: configures users, projects, pipelines, and pipeline inputs
+- **Main**: handles projects, pipelines, uploads, and run-level results
+- **Dashboard**: compares and reviews runs across a pipeline
+
+Use these pages for the detailed documentation:
+
+- [Admin panel](how-to-access-the-admin-panel.md)
+- [Main](main.md)
+- [Dashboard](dashboard.md)
 
 ## Important limitations
 

@@ -43,6 +43,11 @@ from omics.common import today
 from omics.proteomics.rawtools.plotly import histograms, lines_plot
 from omics.plotly_tools import plotly_fig_to_div
 
+RESULT_STACK_COLORS = ["#2f86b8", "#66acd5", "#8fc0dd", "#1f5f83"]
+RESULT_BOX_LINE = "#2f86b8"
+RESULT_BOX_FILL = "rgba(47, 134, 184, 0.26)"
+RESULT_BOX_POINTS = "#1f5f83"
+
 
 # Create your views here.
 def _projects_for_user(user):
@@ -546,9 +551,9 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                     boxpoints="outliers",
                     jitter=0.3,
                     pointpos=0,
-                    marker=dict(size=3, opacity=0, color="#B58E8E"),
-                    line=dict(width=1, color="#B58E8E"),
-                    fillcolor="rgba(181, 142, 142, 0.65)",
+                    marker=dict(size=3, opacity=0, color=RESULT_BOX_POINTS),
+                    line=dict(width=1.2, color=RESULT_BOX_LINE),
+                    fillcolor=RESULT_BOX_FILL,
                 )
             )
             fig.update_layout(
@@ -820,9 +825,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                 buckets = [0, 1, 2]
                 counts = []
                 labels = []
-                # Palette aligned with the rose color used in the other
-                # distribution plots
-                colors = ["#B58E8E", "#A87F7F", "#C6A3A3", "#D8BFBF"]
+                colors = RESULT_STACK_COLORS
                 for val in buckets:
                     labels.append(str(val))
                     counts.append(int((missed == val).sum()))
@@ -903,7 +906,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                 buckets = [1, 2, 3]
                 counts = []
                 labels = []
-                colors = ["#B58E8E", "#A87F7F", "#C6A3A3", "#D8BFBF"]
+                colors = RESULT_STACK_COLORS
                 for val in buckets:
                     labels.append(str(val))
                     counts.append(int((charge == val).sum()))

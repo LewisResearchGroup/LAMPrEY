@@ -3,12 +3,14 @@ import hashlib
 import logging
 import re
 import pandas as pd
+from time import perf_counter
 from dash import dcc, html
 
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
 import plotly.graph_objects as go
+from pandas.api.types import is_numeric_dtype
 
 from dashboards.dashboards.dashboard import config as C
 from dashboards.dashboards.dashboard import tools as T
@@ -47,6 +49,7 @@ METRIC_LABELS = {
     "N_peptides": "Peptides Identified",
     "N_protein_groups": "Protein Groups Identified",
     "MS/MS Identified [%]": "MS/MS Identified (%)",
+    "NumEsiInstabilityFlags": "ESI Instability Flags",
     "Oxidations [%]": "Oxidations (%)",
     "N_missed_cleavages_eq_1 [%]": "Missed Cleavages Eq1 (%)",
     "Protein_score_median": "Protein Score Median",
@@ -83,39 +86,10 @@ X_AXIS_LABELS = {
 
 x_options = [dict(label=X_AXIS_LABELS[x], value=x) for x in X_AXIS_LABELS]
 
-metric_options = [
-    {"label": METRIC_LABELS[k], "value": k}
-    for k in [
-        "N_peptides",
-        "__tmt_peptides_per_sample__",
-        "N_protein_groups",
-        "__tmt_protein_groups_per_sample__",
-        "MS/MS Identified [%]",
-        "Oxidations [%]",
-        "N_missed_cleavages_eq_1 [%]",
-        "Protein_score_median",
-        "Protein_score_mean",
-        "Protein_qvalue_median",
-        "Protein_qvalue_lt_0_01 [%]",
-        "Protein_peptides_median",
-        "Protein_unique_peptides_median",
-        "Protein_razor_unique_peptides_median",
-        "Protein_unique_peptides_eq_1 [%]",
-        "Protein_msms_count_median",
-        "Protein_unique_seq_cov_median [%]",
-        "Peptide_score_median",
-        "Peptide_score_mean",
-        "Peptide_PEP_median",
-        "Peptide_PEP_lt_0_01 [%]",
-        "Peptide_length_median",
-        "Peptide_msms_count_median",
-        "Peptide_unique_groups [%]",
-        "Peptide_unique_proteins [%]",
-        "Uncalibrated - Calibrated m/z [ppm] (ave)",
-        # Group-specific QC1/QC2 metrics are temporarily disabled.
-        # "calibrated_retention_time_qc1",
-        # "calibrated_retention_time_qc2",
-    ]
+DEFAULT_PRIMARY_METRIC = "N_protein_groups"
+SYNTHETIC_METRIC_OPTIONS = [
+    {"label": METRIC_LABELS["__tmt_peptides_per_sample__"], "value": "__tmt_peptides_per_sample__"},
+    {"label": METRIC_LABELS["__tmt_protein_groups_per_sample__"], "value": "__tmt_protein_groups_per_sample__"},
 ]
 
 BUTTON_STYLE = {
@@ -143,10 +117,25 @@ layout = html.Div(
                         dcc.Dropdown(
                             id="qc-metric",
                             multi=False,
-                            options=metric_options,
-                            value="N_peptides",
+                            options=[],
+                            value=DEFAULT_PRIMARY_METRIC,
                             className="pqc-metric-dropdown",
                             clearable=False,
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-qc-metric-wrap",
+                    children=[
+                        html.Div("Secondary QC Metric", className="pqc-field-label"),
+                        dcc.Dropdown(
+                            id="qc-metric-secondary",
+                            multi=False,
+                            options=[],
+                            value=None,
+                            placeholder="Optional second metric",
+                            className="pqc-metric-dropdown",
+                            clearable=True,
                         ),
                     ],
                 ),
@@ -198,7 +187,7 @@ layout = html.Div(
                         ),
                     ],
                     style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
-                )
+                ),
             ]
         ),
     ]
@@ -230,6 +219,53 @@ def callbacks(app):
         text = text.replace("Uncalibrated - Calibrated m/z", "delta m/z")
         text = text.replace(" [ppm] (ave)", " (ppm)")
         return text
+
+    def _metric_option_label(metric_name):
+        if metric_name in METRIC_LABELS:
+            return METRIC_LABELS[metric_name]
+        text = str(metric_name).replace("_", " ")
+        text = text.replace("[%]", "(%)")
+        text = text.replace("Uncalibrated - Calibrated m/z", "Delta m/z")
+        text = text.replace(" [ppm] (ave)", " (ppm, avg)")
+        return text
+
+    def _available_qc_metrics(df, include_synthetic=True):
+        if df is None or df.empty:
+            base_options = []
+        else:
+            preferred_order = []
+            seen = set()
+            for column in C.qc_columns_options:
+                if column in df.columns and is_numeric_dtype(df[column]) and column not in seen:
+                    preferred_order.append(column)
+                    seen.add(column)
+            for column in df.columns:
+                if (
+                    column not in seen
+                    and column not in C.qc_columns_always
+                    and is_numeric_dtype(df[column])
+                ):
+                    preferred_order.append(column)
+                    seen.add(column)
+            base_options = [
+                {"label": _metric_option_label(column), "value": column}
+                for column in preferred_order
+            ]
+
+        if DEFAULT_PRIMARY_METRIC in {option["value"] for option in base_options}:
+            default_option = next(
+                option for option in base_options if option["value"] == DEFAULT_PRIMARY_METRIC
+            )
+            base_options = [
+                default_option,
+                *[option for option in base_options if option["value"] != DEFAULT_PRIMARY_METRIC],
+            ]
+
+        if include_synthetic:
+            if base_options:
+                return base_options[:1] + SYNTHETIC_METRIC_OPTIONS + base_options[1:]
+            return SYNTHETIC_METRIC_OPTIONS[:]
+        return base_options
 
     def _highlight_details(scope_data, proposal, df):
         if not proposal or df.empty:
@@ -280,35 +316,72 @@ def callbacks(app):
             details[str(run_key)] = {"sample_label": str(sample_label)}
         return details
 
+    def _hidden_graph_response(filename="QC-trends"):
+        return (
+            go.Figure(),
+            T.gen_figure_config(filename=filename, editable=False),
+            {**GRAPH_STYLE, "display": "none"},
+        )
+
+    def _is_synthetic_metric(metric_name):
+        return metric_name in {
+            "__tmt_peptides_per_sample__",
+            "__tmt_protein_groups_per_sample__",
+        }
+
     @app.callback(
-        Output("qc-figure", "figure"),
-        Output("qc-figure", "config"),
-        Output("qc-figure", "style"),
-        Output("qc-empty-state", "style"),
-        Input("tabs", "value"),
+        Output("qc-metric", "options"),
+        Output("qc-metric", "value"),
+        Input("qc-scope-data", "data"),
+        State("qc-metric", "value"),
+    )
+    def update_qc_primary_metric_options(scope_data, current_primary):
+        df = pd.DataFrame(T.dashboard_rows(scope_data))
+        primary_options = _available_qc_metrics(df, include_synthetic=True)
+        primary_values = {option["value"] for option in primary_options}
+        default_primary = (
+            current_primary
+            if current_primary in primary_values and not _is_synthetic_metric(current_primary)
+            else DEFAULT_PRIMARY_METRIC
+            if DEFAULT_PRIMARY_METRIC in primary_values
+            else (primary_options[0]["value"] if primary_options else None)
+        )
+        return primary_options, default_primary
+
+    @app.callback(
+        Output("qc-metric-secondary", "options"),
+        Output("qc-metric-secondary", "value"),
         Input("qc-scope-data", "data"),
         Input("qc-metric", "value"),
-        Input("x", "value"),
-        Input("anomaly-proposed-flags", "data"),
+        State("qc-metric-secondary", "value"),
     )
-    def plot_qc_figure(tab, data_in, metric_in, x_in, anomaly_proposal):
-        """Creates the QC trend plot figure."""
-        if tab != "quality_control":
-            raise PreventUpdate
+    def update_qc_secondary_metric_options(scope_data, current_primary, current_secondary):
+        df = pd.DataFrame(T.dashboard_rows(scope_data))
+        secondary_options = [
+            option for option in _available_qc_metrics(df, include_synthetic=False)
+            if option["value"] != current_primary
+        ]
+        secondary_values = {option["value"] for option in secondary_options}
+        default_secondary = (
+            current_secondary
+            if current_secondary in secondary_values and current_secondary != current_primary
+            else None
+        )
+        return secondary_options, default_secondary
+
+    def _build_qc_figure(data_in, metric_in, x_in, anomaly_proposal):
+        plot_started = perf_counter()
         data = data_in
         if data is None:
             raise PreventUpdate
+        selected_metric = metric_in
+        if not selected_metric:
+            return _hidden_graph_response()
         x = x_in or "RawFile"
-        selected_metric = metric_in or "N_peptides"
 
         df = pd.DataFrame(T.dashboard_rows(data))
         if df.empty:
-            return (
-                go.Figure(),
-                T.gen_figure_config(filename="QC-barplot", editable=False),
-                {**GRAPH_STYLE, "display": "none"},
-                {"display": "flex", "flex": "1 1 auto"},
-            )
+            return _hidden_graph_response(filename="QC-barplot")
 
         assert pd.value_counts(df.columns).max() == 1, pd.value_counts(df.columns)
 
@@ -346,12 +419,7 @@ def callbacks(app):
                     key=lambda c: int(re.search(r"\d+", str(c)).group(0)),
                 )
                 if len(tmt_cols) == 0:
-                    return (
-                        go.Figure(),
-                        T.gen_figure_config(filename="QC-trends", editable=False),
-                        {**GRAPH_STYLE, "display": "none"},
-                        {"display": "flex", "flex": "1 1 auto"},
-                    )
+                    return _hidden_graph_response()
 
                 if "Index" in df.columns:
                     df = df.sort_values("Index", na_position="last").reset_index(drop=True)
@@ -396,12 +464,7 @@ def callbacks(app):
                         )
                 long_df = pd.DataFrame(expanded_rows)
                 if long_df.empty:
-                    return (
-                        go.Figure(),
-                        T.gen_figure_config(filename="QC-trends", editable=False),
-                        {**GRAPH_STYLE, "display": "none"},
-                        {"display": "flex", "flex": "1 1 auto"},
-                    )
+                    return _hidden_graph_response()
 
                 metric_label = METRIC_LABELS.get(selected_metric, selected_metric)
                 y_max = float(pd.to_numeric(long_df["value"], errors="coerce").max() or 0.0)
@@ -531,8 +594,6 @@ def callbacks(app):
                     tickangle=-90,
                     title_standoff=20,
                 )
-                # Keep synthetic index axes anchored at 1 to avoid negative
-                # autorange padding ticks on the left side.
                 if len(long_df) > 0:
                     fig.update_xaxes(range=[0.5, float(len(long_df)) + 0.5])
                 fig.update_yaxes(
@@ -547,15 +608,16 @@ def callbacks(app):
                 )
                 config = T.gen_figure_config(filename="QC-trends", editable=False)
                 graph_style = {**GRAPH_STYLE, "display": "block"}
-                return fig, config, graph_style, {"display": "none", "flex": "1 1 auto"}
+                logging.warning(
+                    "[perf] QC figure built metric=%s x=%s rows=%s synthetic_tmt=true elapsed=%.3fs",
+                    selected_metric,
+                    axis_mode,
+                    len(df.index),
+                    perf_counter() - plot_started,
+                )
+                return fig, config, graph_style
 
-            return (
-                go.Figure(),
-                T.gen_figure_config(filename="QC-trends", editable=False),
-                {**GRAPH_STYLE, "display": "none"},
-                {"display": "flex", "flex": "1 1 auto"},
-            )
-        # Keep all samples visible by imputing missing points as zero.
+            return _hidden_graph_response()
         y_series = pd.to_numeric(df[selected_metric], errors="coerce").fillna(0)
         y_max = float(y_series.max() or 0.0)
         y_upper = 1.0 if y_max <= 0 else y_max * 1.03
@@ -575,7 +637,10 @@ def callbacks(app):
         )
         sample_labels = _sample_label_series(df)
         acquired = df["DateAcquired"].astype(str).replace("NaT", "N/A")
-        x_values = sample_labels if x == "RawFile" else df[x]
+        if x == "RawFile":
+            x_values = pd.RangeIndex(start=1, stop=len(df) + 1)
+        else:
+            x_values = df[x]
         figure_data = [
             go.Scatter(
                 x=x_values,
@@ -705,7 +770,13 @@ def callbacks(app):
 
         fig.update_traces(marker_line_width=1, opacity=0.95)
 
-        logging.info(f"QC plot built for metric {selected_metric} with height {fig.layout.height}")
+        logging.warning(
+            "[perf] QC figure built metric=%s x=%s rows=%s synthetic_tmt=false elapsed=%.3fs",
+            selected_metric,
+            x,
+            len(df.index),
+            perf_counter() - plot_started,
+        )
 
         fig.update_xaxes(
             title_text=x_axis_label,
@@ -729,11 +800,17 @@ def callbacks(app):
                 range=[0.5, float(max(1, index_max)) + 0.5],
             )
         elif x == "RawFile":
-            # Tighten the x-axis range for categorical labels so there is
-            # no blank padding at the start/end of the plot area.
-            n_samples = len(x_values)
+            n_samples = len(sample_labels)
             if n_samples > 0:
-                fig.update_xaxes(range=[-0.5, n_samples - 0.5])
+                tick_vals = list(range(1, n_samples + 1))
+                tick_text = sample_labels.tolist()
+                tick_vals, tick_text = _thin_ticks(tick_vals, tick_text)
+                fig.update_xaxes(
+                    tickmode="array",
+                    tickvals=tick_vals,
+                    ticktext=tick_text,
+                    range=[0.5, n_samples + 0.5],
+                )
         fig.update_yaxes(
             title_text=metric_label,
             showgrid=True,
@@ -744,6 +821,7 @@ def callbacks(app):
             range=[0, y_upper],
             title_standoff=30,
             automargin=True,
+            nticks=6,
             tickformat=",d" if is_integer_metric_name(selected_metric) else None,
         )
 
@@ -751,7 +829,104 @@ def callbacks(app):
 
         graph_style = {**GRAPH_STYLE, "display": "block"}
 
-        return fig, config, graph_style, {"display": "none", "flex": "1 1 auto"}
+        return fig, config, graph_style
+
+    @app.callback(
+        Output("qc-figure", "figure"),
+        Output("qc-figure", "config"),
+        Output("qc-figure", "style"),
+        Output("qc-empty-state", "style"),
+        Input("tabs", "value"),
+        Input("qc-scope-data", "data"),
+        Input("qc-metric", "value"),
+        Input("qc-metric-secondary", "value"),
+        Input("x", "value"),
+        Input("anomaly-proposed-flags", "data"),
+    )
+    def plot_qc_figure(tab, data_in, metric_in, secondary_metric_in, x_in, anomaly_proposal):
+        """Creates the QC trend plot figures."""
+        if tab != "quality_control":
+            raise PreventUpdate
+        if data_in is None:
+            raise PreventUpdate
+
+        df = pd.DataFrame(T.dashboard_rows(data_in))
+        if df.empty:
+            primary_fig, primary_config, primary_style = _hidden_graph_response(filename="QC-barplot")
+            return (
+                primary_fig,
+                primary_config,
+                primary_style,
+                {"display": "flex", "flex": "1 1 auto"},
+            )
+
+        primary_fig, primary_config, primary_style = _build_qc_figure(
+            data_in=data_in,
+            metric_in=metric_in or "N_peptides",
+            x_in=x_in,
+            anomaly_proposal=anomaly_proposal,
+        )
+        if (
+            secondary_metric_in
+            and secondary_metric_in != metric_in
+            and _is_synthetic_metric(metric_in or "N_peptides") == _is_synthetic_metric(secondary_metric_in)
+        ):
+            secondary_fig, _, secondary_style = _build_qc_figure(
+                data_in=data_in,
+                metric_in=secondary_metric_in,
+                x_in=x_in,
+                anomaly_proposal=anomaly_proposal,
+            )
+            if secondary_style.get("display") != "none" and len(secondary_fig.data) > 0:
+                if len(primary_fig.data) > 0:
+                    primary_fig.data[0].update(showlegend=True)
+                for idx, secondary_trace in enumerate(secondary_fig.data):
+                    secondary_trace.update(yaxis="y2")
+                    if idx == 0:
+                        secondary_trace.update(
+                            line=dict(width=2.5, color="#f97316", shape="linear"),
+                            marker=dict(size=8, color="#f97316", line=dict(width=1.5, color="#ffffff")),
+                            opacity=0.95,
+                            showlegend=True,
+                        )
+                    else:
+                        secondary_trace.update(showlegend=False)
+                    primary_fig.add_trace(secondary_trace)
+                primary_fig.update_layout(
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.08,
+                        xanchor="left",
+                        x=0,
+                        bgcolor="rgba(0,0,0,0)",
+                        borderwidth=0,
+                    ),
+                    yaxis2=dict(
+                        title_text=secondary_fig.layout.yaxis.title.text,
+                        overlaying="y",
+                        side="right",
+                        showgrid=False,
+                        zeroline=False,
+                        showline=True,
+                        linecolor="#e2e8ed",
+                        range=secondary_fig.layout.yaxis.range,
+                        title_standoff=30,
+                        automargin=True,
+                        tickmode="sync",
+                        nticks=6,
+                        tickformat=(
+                            ",d" if is_integer_metric_name(secondary_metric_in) else None
+                        ),
+                    ),
+                )
+        return (
+            primary_fig,
+            primary_config,
+            primary_style,
+            {"display": "none", "flex": "1 1 auto"},
+        )
 
     @app.callback(
         Output("qc-download", "data"),

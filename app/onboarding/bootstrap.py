@@ -78,7 +78,7 @@ def _seed_mqpar_path() -> Path:
     return _first_existing_path(
         _demo_seed_config_dir() / "mqpar.xml",
         _omics_test_data_root() / "maxquant" / "tmt11" / "mqpar" / "mqpar.xml",
-        _repo_root() / "mqpar_2.4.12.0.xml",
+        _app_root() / "seed" / "defaults" / "config" / "mqpar_2.4.12.0.xml",
     )
 
 

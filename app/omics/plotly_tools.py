@@ -9,12 +9,61 @@ import plotly.express as px
 from dash import dash_table as dt
 
 
-COLORS = ["rgba(100, 0, 0, 0.5)", "rgba(0, 100, 0, 0.5)", "rgba(0, 0, 100, 0.5)"]
+COLORS = ["#167c80", "#dd6b4d", "#345c73", "#d1a857"]
+PLOT_BG = "#fbfdfd"
+PAPER_BG = "#ffffff"
+GRID_COLOR = "#dce7eb"
+AXIS_COLOR = "#35515f"
+TITLE_COLOR = "#1e3c48"
+LEGEND_BG = "rgba(255, 255, 255, 0.86)"
 
 
 def set_template():
     pio.templates["draft"] = go.layout.Template(
-        layout=dict(font={"size": 10}, margin=dict(l=50, r=0, t=100, b=100))
+        layout=dict(
+            font={"size": 12, "color": AXIS_COLOR},
+            title={
+                "x": 0.02,
+                "xanchor": "left",
+                "font": {"size": 22, "color": TITLE_COLOR},
+            },
+            paper_bgcolor=PAPER_BG,
+            plot_bgcolor=PLOT_BG,
+            margin=dict(l=56, r=22, t=68, b=56),
+            hoverlabel=dict(
+                bgcolor="#ffffff",
+                bordercolor="#d7e5ea",
+                font={"color": "#17313b", "size": 12},
+            ),
+            legend=dict(
+                bgcolor=LEGEND_BG,
+                bordercolor="#d7e5ea",
+                borderwidth=1,
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+            ),
+            xaxis=dict(
+                showgrid=True,
+                gridcolor=GRID_COLOR,
+                zeroline=False,
+                linecolor="#bdd0d8",
+                tickcolor="#bdd0d8",
+                ticks="outside",
+                title_font={"size": 13, "color": TITLE_COLOR},
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor=GRID_COLOR,
+                zeroline=False,
+                linecolor="#bdd0d8",
+                tickcolor="#bdd0d8",
+                ticks="outside",
+                title_font={"size": 13, "color": TITLE_COLOR},
+            ),
+        )
     )
 
     pio.templates.default = "draft"
@@ -135,13 +184,17 @@ def lines_plot(rawtools_matrix, cols, colors=None, title=None, **kwargs):
         colors = COLORS
     fig = go.Figure()
     for i, col in enumerate(cols):
+        color = colors[i % len(colors)]
         fig.add_trace(
             go.Scatter(
                 x=rawtools_matrix.index,
                 y=rawtools_matrix[col],
                 name=col,
                 mode="lines",
-                line=dict(width=0.5, color=colors[i]),
+                line=dict(width=1.4, color=color),
+                fill="tozeroy",
+                fillcolor=f"rgba(22, 124, 128, 0.12)" if i == 0 else "rgba(221, 107, 77, 0.12)",
+                hovertemplate="%{x:.2f}<br>%{y:.3s}<extra></extra>",
                 **kwargs
             ),
         )
@@ -149,10 +202,10 @@ def lines_plot(rawtools_matrix, cols, colors=None, title=None, **kwargs):
         legend_title_text="",
         autosize=True,
         title=title,
-        legend=dict(orientation="h"),
-        margin=dict(l=50, r=10, b=50, t=50, pad=0),
+        margin=dict(l=56, r=18, b=54, t=64, pad=0),
     )
-    fig.update_xaxes(title_text=rawtools_matrix.index.name)
+    fig.update_xaxes(title_text=rawtools_matrix.index.name, automargin=True)
+    fig.update_yaxes(automargin=True)
     return fig
 
 
@@ -171,18 +224,21 @@ def histograms(rawtools_matrix, cols=None, title=None, colors=None):
                 x=rawtools_matrix[col],
                 visible="legendonly" if i > 0 else None,
                 name=col,
-                marker_color=colors[i],
+                marker_color=colors[i % len(colors)],
+                marker_line_color="#ffffff",
+                marker_line_width=0.8,
             )
         )
     fig.update_layout(legend_title_text="")
     fig.update_layout(barmode="overlay")
-    fig.update_traces(opacity=0.75)
+    fig.update_traces(opacity=0.82)
     fig.update_layout(title=title)
     fig.update_layout(
         legend_title_text="",
         autosize=True,
         title=title,
-        legend=dict(orientation="h"),
-        margin=dict(l=50, r=10, b=50, t=50, pad=0),
+        margin=dict(l=56, r=18, b=54, t=64, pad=0),
     )
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
     return fig

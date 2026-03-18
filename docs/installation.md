@@ -6,8 +6,8 @@ The supported setup is Docker-based. Install:
 
 - Docker Engine
 - Docker Compose, either as `docker-compose` or `docker compose`
-- `make`
 - `git-lfs`
+- `make`
 
 ## 1. Install Docker
 
