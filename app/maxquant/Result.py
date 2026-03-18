@@ -415,38 +415,13 @@ class Result(models.Model):
         return df
 
     def dashboard_qc_data(self, force_update=False):
-        cache_path = self.dashboard_qc_cache_path
-        if force_update:
-            logging.warning(
-                "[perf] Run QC cache rebuild forced result=%s cache=%s",
-                self.pk,
-                cache_path,
-            )
-        elif not self.dashboard_qc_cache_is_stale():
-            logging.warning(
-                "[perf] Run QC cache hit result=%s cache=%s",
-                self.pk,
-                cache_path,
-            )
+        if (not force_update) and (not self.dashboard_qc_cache_is_stale()):
             return self._read_dashboard_qc_cache()
-        else:
-            logging.warning(
-                "[perf] Run QC cache miss result=%s cache=%s",
-                self.pk,
-                cache_path,
-            )
 
         df = self._build_dashboard_qc_data()
         if df is None:
             df = pd.DataFrame()
         self._write_dashboard_qc_cache(df)
-        logging.warning(
-            "[perf] Run QC cache rebuilt result=%s rows=%s columns=%s cache=%s",
-            self.pk,
-            len(df.index),
-            len(df.columns),
-            cache_path,
-        )
         return df
 
     @property

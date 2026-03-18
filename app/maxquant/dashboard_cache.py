@@ -108,36 +108,11 @@ def pipeline_dashboard_qc_data(pipeline, force_update=False):
         .order_by("raw_file__created", "raw_file_id")
     )
     cache_path = pipeline_dashboard_qc_cache_path(pipeline)
-    if force_update:
-        logging.warning(
-            "[perf] Pipeline QC cache rebuild forced pipeline=%s cache=%s",
-            pipeline.slug,
-            cache_path,
-        )
     stale = force_update or pipeline_dashboard_qc_cache_is_stale(pipeline, results)
     if stale:
-        logging.warning(
-            "[perf] Pipeline QC cache miss pipeline=%s runs=%s cache=%s",
-            pipeline.slug,
-            len(results),
-            cache_path,
-        )
         df = build_pipeline_dashboard_qc_cache(pipeline, results)
         write_pipeline_dashboard_qc_cache(cache_path, df)
-        logging.warning(
-            "[perf] Pipeline QC cache rebuilt pipeline=%s rows=%s columns=%s cache=%s",
-            pipeline.slug,
-            len(df.index),
-            len(df.columns),
-            cache_path,
-        )
         return df
-    logging.warning(
-        "[perf] Pipeline QC cache hit pipeline=%s runs=%s cache=%s",
-        pipeline.slug,
-        len(results),
-        cache_path,
-    )
     return read_pipeline_dashboard_qc_cache(cache_path)
 
 
@@ -147,11 +122,6 @@ def warm_dashboard_caches_for_result(result):
     try:
         result.dashboard_qc_data(force_update=True)
         pipeline_dashboard_qc_data(result.pipeline, force_update=True)
-        logging.warning(
-            "[perf] Dashboard QC caches warmed result=%s pipeline=%s",
-            result.pk,
-            result.pipeline.slug,
-        )
     except Exception as exc:
         logging.warning(
             "Dashboard QC cache warm failed for result=%s pipeline=%s: %s",

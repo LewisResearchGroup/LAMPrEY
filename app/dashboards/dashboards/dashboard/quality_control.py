@@ -3,7 +3,6 @@ import hashlib
 import logging
 import re
 import pandas as pd
-from time import perf_counter
 from dash import dcc, html
 
 from dash.dependencies import Input, Output, State
@@ -370,7 +369,6 @@ def callbacks(app):
         return secondary_options, default_secondary
 
     def _build_qc_figure(data_in, metric_in, x_in, anomaly_proposal):
-        plot_started = perf_counter()
         data = data_in
         if data is None:
             raise PreventUpdate
@@ -608,13 +606,6 @@ def callbacks(app):
                 )
                 config = T.gen_figure_config(filename="QC-trends", editable=False)
                 graph_style = {**GRAPH_STYLE, "display": "block"}
-                logging.warning(
-                    "[perf] QC figure built metric=%s x=%s rows=%s synthetic_tmt=true elapsed=%.3fs",
-                    selected_metric,
-                    axis_mode,
-                    len(df.index),
-                    perf_counter() - plot_started,
-                )
                 return fig, config, graph_style
 
             return _hidden_graph_response()
@@ -769,14 +760,6 @@ def callbacks(app):
         )
 
         fig.update_traces(marker_line_width=1, opacity=0.95)
-
-        logging.warning(
-            "[perf] QC figure built metric=%s x=%s rows=%s synthetic_tmt=false elapsed=%.3fs",
-            selected_metric,
-            x,
-            len(df.index),
-            perf_counter() - plot_started,
-        )
 
         fig.update_xaxes(
             title_text=x_axis_label,

@@ -3,7 +3,6 @@ import re
 import pandas as pd
 import numpy as np
 from pathlib import Path as P
-from time import perf_counter
 import logging
 
 import dash
@@ -527,7 +526,6 @@ def refresh_qc_table(
     uid,
     **kwargs,
 ):
-    refresh_started = perf_counter()
     refresh_probe = str(pd.Timestamp.utcnow().value)
     user = kwargs.get("user")
     effective_uid = getattr(user, "uuid", None) or uid
@@ -595,13 +593,6 @@ def refresh_qc_table(
     if df.empty:
         empty_options = [{"label": "All users", "value": "__all__"}]
         scope_style = {"display": "block"} if is_admin_session else {"display": "none"}
-        logging.warning(
-            "[perf] QC refresh callback project=%s pipeline=%s uploader=%s rows=0 elapsed=%.3fs",
-            project,
-            pipeline,
-            uploader_filter,
-            perf_counter() - refresh_started,
-        )
         return (
             T.table_from_dataframe(df, id="qc-table", row_selectable="multi"),
             {"rows": [], "error": scope_error, "status": data_result.get("status", "no_data")},
@@ -738,15 +729,6 @@ def refresh_qc_table(
         uploader_options = [{"label": "All users", "value": "__all__"}]
     show_scope_user = bool(is_admin_session)
     scope_style = {"display": "block"} if show_scope_user else {"display": "none"}
-    logging.warning(
-        "[perf] QC refresh callback project=%s pipeline=%s uploader=%s rows=%s columns=%s elapsed=%.3fs",
-        project,
-        pipeline,
-        uploader_filter,
-        len(df.index),
-        len(df.columns),
-        perf_counter() - refresh_started,
-    )
     return (
         T.table_from_dataframe(
             df_display,
