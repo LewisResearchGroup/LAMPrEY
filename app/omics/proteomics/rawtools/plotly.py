@@ -7,11 +7,11 @@ except ImportError:  # graceful fallback if dependency missing
     def register_plotly_resampler():
         return None
 
-colors = ["#167c80", "#dd6b4d", "#345c73"]
+colors = ["#2f86b8", "#66acd5", "#1f5f83"]
 fills = [
-    "rgba(22, 124, 128, 0.14)",
-    "rgba(221, 107, 77, 0.14)",
-    "rgba(52, 92, 115, 0.12)",
+    "rgba(47, 134, 184, 0.16)",
+    "rgba(102, 172, 213, 0.16)",
+    "rgba(31, 95, 131, 0.12)",
 ]
 DEFAULT_MAX_SAMPLES = 1000  # how many points to show per trace when resampling
 

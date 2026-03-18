@@ -43,10 +43,10 @@ from omics.common import today
 from omics.proteomics.rawtools.plotly import histograms, lines_plot
 from omics.plotly_tools import plotly_fig_to_div
 
-RESULT_STACK_COLORS = ["#167c80", "#29a3a8", "#dd6b4d", "#f2b880"]
-RESULT_BOX_LINE = "#167c80"
-RESULT_BOX_FILL = "rgba(22, 124, 128, 0.32)"
-RESULT_BOX_POINTS = "#dd6b4d"
+RESULT_STACK_COLORS = ["#2f86b8", "#66acd5", "#8fc0dd", "#1f5f83"]
+RESULT_BOX_LINE = "#2f86b8"
+RESULT_BOX_FILL = "rgba(47, 134, 184, 0.26)"
+RESULT_BOX_POINTS = "#1f5f83"
 
 
 # Create your views here.
