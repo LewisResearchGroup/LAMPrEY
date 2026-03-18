@@ -637,7 +637,10 @@ def callbacks(app):
         )
         sample_labels = _sample_label_series(df)
         acquired = df["DateAcquired"].astype(str).replace("NaT", "N/A")
-        x_values = sample_labels if x == "RawFile" else df[x]
+        if x == "RawFile":
+            x_values = pd.RangeIndex(start=1, stop=len(df) + 1)
+        else:
+            x_values = df[x]
         figure_data = [
             go.Scatter(
                 x=x_values,
@@ -797,9 +800,17 @@ def callbacks(app):
                 range=[0.5, float(max(1, index_max)) + 0.5],
             )
         elif x == "RawFile":
-            n_samples = len(x_values)
+            n_samples = len(sample_labels)
             if n_samples > 0:
-                fig.update_xaxes(range=[-0.5, n_samples - 0.5])
+                tick_vals = list(range(1, n_samples + 1))
+                tick_text = sample_labels.tolist()
+                tick_vals, tick_text = _thin_ticks(tick_vals, tick_text)
+                fig.update_xaxes(
+                    tickmode="array",
+                    tickvals=tick_vals,
+                    ticktext=tick_text,
+                    range=[0.5, n_samples + 0.5],
+                )
         fig.update_yaxes(
             title_text=metric_label,
             showgrid=True,
