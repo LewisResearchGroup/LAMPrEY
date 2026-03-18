@@ -2,16 +2,20 @@ site_name: LAMPrEY Documentation
 nav:
     - Home: index.md
     - Getting Started:
+        - Overview: getting-started.md
         - Installation: installation.md
         - Demo data: demo.md
-    - Usage:
-        - Admin panel: how-to-access-the-admin-panel.md
-        - Add a user: how-to-add-a-user.md
-        - Create a project: how-to-add-a-project.md
-        - Prepare mqpar.xml: how-to-prepare-mqpar.md
-        - Create a pipeline: how-to-add-a-pipeline.md
-        - Submit RAW files: how-to-submit-raw-files.md
-    - Components:
+    - Application:
+        - Main: main.md
+        - Dashboard: dashboard.md
+        - Admin panel:
+            - Overview: how-to-access-the-admin-panel.md
+            - Add a user: how-to-add-a-user.md
+            - Create a project: how-to-add-a-project.md
+            - Prepare mqpar.xml: how-to-prepare-mqpar.md
+            - Create a pipeline: how-to-add-a-pipeline.md
+            - Submit RAW files: how-to-submit-raw-files.md
+    - System:
         - Datalake: datalake.md
         - RawTools: rawtools.md
         - MaxQuant: maxquant.md
@@ -31,6 +35,7 @@ theme:
   features:
     - navigation.tabs
     - navigation.tabs.sticky
+    - navigation.expand
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -58,3 +63,9 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true

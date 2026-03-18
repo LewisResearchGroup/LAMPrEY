@@ -19,3 +19,17 @@ After successful login the following view opens.
 ![](img/admin-panel.png)
 
 This is the admin panel where users, projects, pipelines, and related resources can be managed.
+
+## What belongs under the admin panel
+
+The admin panel is where the platform structure is created and maintained.
+
+Use it when you need to:
+
+- [add a user](how-to-add-a-user.md)
+- [create a project](how-to-add-a-project.md)
+- [prepare `mqpar.xml`](how-to-prepare-mqpar.md)
+- [create a pipeline](how-to-add-a-pipeline.md)
+- [submit RAW files](how-to-submit-raw-files.md) after a pipeline has been configured
+
+This matches the architecture where administrative configuration feeds the operational views in **Main** and the analytical views in **Dashboard**.
