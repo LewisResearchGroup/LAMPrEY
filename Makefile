@@ -14,6 +14,20 @@ PYTHON ?= /opt/conda/bin/python
 RUN_WEB = $(SUDO) $(COMPOSE) run --rm web
 RUN_WEB_LOCAL = $(SUDO) $(COMPOSE) -f docker-compose-develop.yml run --rm web
 
+define wait_for_http
+	@echo "Waiting for $(1) on $(2) ..."
+	@elapsed=0; i=0; \
+	spinner='|/-\\'; \
+	until curl -sf $(2) >/dev/null; do \
+		c=$$(printf "%s" "$$spinner" | cut -c $$((i % 4 + 1))); \
+		printf "\rStarting $(1)... [%s] %ss elapsed" "$$c" "$$elapsed"; \
+		sleep 2; \
+		elapsed=$$((elapsed + 2)); \
+		i=$$((i + 1)); \
+	done; \
+	printf "\rStarting $(1)... [OK] %ss elapsed\n" "$$elapsed"
+endef
+
 .PHONY: help \
 	init init-local update \
 	devel devel-build serve down test \
@@ -85,17 +99,7 @@ update:
 devel:
 	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml down
 	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml up -d
-	@echo "Waiting for dev server on http://127.0.0.1:8000 ..."
-	@elapsed=0; i=0; \
-	spinner='|/-\\'; \
-	until curl -sf http://127.0.0.1:8000/ >/dev/null; do \
-		c=$$(printf "%s" "$$spinner" | cut -c $$((i % 4 + 1))); \
-		printf "\rStarting dev server... [%s] %ss elapsed" "$$c" "$$elapsed"; \
-		sleep 2; \
-		elapsed=$$((elapsed + 2)); \
-		i=$$((i + 1)); \
-	done; \
-	printf "\rStarting dev server... [OK] %ss elapsed\n" "$$elapsed"
+	$(call wait_for_http,dev server,http://127.0.0.1:8000/)
 	@echo "Server is responding"
 	@xdg-open http://127.0.0.1:8000 2>/dev/null || open http://127.0.0.1:8000 2>/dev/null || true
 	@echo "Tailing web logs (Ctrl+C to stop logs; stack keeps running)..."
@@ -104,17 +108,7 @@ devel:
 devel-build:
 	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml down
 	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml up -d --build
-	@echo "Waiting for dev server on http://127.0.0.1:8000 ..."
-	@elapsed=0; i=0; \
-	spinner='|/-\\'; \
-	until curl -sf http://127.0.0.1:8000/ >/dev/null; do \
-		c=$$(printf "%s" "$$spinner" | cut -c $$((i % 4 + 1))); \
-		printf "\rStarting dev server... [%s] %ss elapsed" "$$c" "$$elapsed"; \
-		sleep 2; \
-		elapsed=$$((elapsed + 2)); \
-		i=$$((i + 1)); \
-	done; \
-	printf "\rStarting dev server... [OK] %ss elapsed\n" "$$elapsed"
+	$(call wait_for_http,dev server,http://127.0.0.1:8000/)
 	@echo "Server is responding"
 	@xdg-open http://127.0.0.1:8000 2>/dev/null || open http://127.0.0.1:8000 2>/dev/null || true
 	@echo "Tailing web logs (Ctrl+C to stop logs; stack keeps running)..."
@@ -123,10 +117,7 @@ devel-build:
 serve:
 	$(SUDO) $(COMPOSE) -f docker-compose.yml down
 	$(SUDO) $(COMPOSE) -f docker-compose.yml up -d
-	@echo "Waiting for server on http://localhost:8080 ..."
-	@until curl -sf http://localhost:8080/ >/dev/null; do \
-		sleep 2; \
-	done
+	$(call wait_for_http,server,http://localhost:8080/)
 	@echo "Server is responding"
 	@xdg-open http://localhost:8080 2>/dev/null || open http://localhost:8080 2>/dev/null || true
 	@echo "Tailing web logs (Ctrl+C to stop logs; stack keeps running)..."
