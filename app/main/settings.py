@@ -2,6 +2,13 @@ import os
 from pathlib import Path as P
 from django.core.files.storage import FileSystemStorage
 
+
+def env_bool(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = P(__file__).resolve().parent.parent
 
@@ -42,22 +49,26 @@ X_FRAME_OPTIONS = "SAMEORIGIN"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
 ## Strict-Transport-Security
-SECURE_HSTS_SECONDS = 15768000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+SECURE_HSTS_SECONDS = int(
+    os.getenv("SECURE_HSTS_SECONDS", "15768000" if not DEBUG else "0")
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG
+)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", not DEBUG)
 
 ## that requests over HTTP are redirected to HTTPS.
-SECURE_SSL_REDIRECT = not DEBUG
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
 
 # for more security
-CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
 CSRF_USE_SESSIONS = True
 
 CSRF_COOKIE_HTTPONLY = True
 
 SECURE_BROWSER_XSS_FILTER = True
 
-SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 SESSION_COOKIE_SAMESITE = "Strict"
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 20971520  # 20MB max upload

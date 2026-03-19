@@ -45,6 +45,7 @@ COPY requirements.txt requirements.txt
 
 # add this to avoid issues with matplotlib installation
 ENV MPLCONFIGDIR=/tmp/matplotlib
+RUN mkdir -p "${MPLCONFIGDIR}" && chmod 1777 "${MPLCONFIGDIR}"
 
 # add uv to install with increased timeout for large packages
 ENV UV_HTTP_TIMEOUT=300

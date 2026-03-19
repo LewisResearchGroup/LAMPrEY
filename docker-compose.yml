@@ -8,6 +8,8 @@ services:
     image: ghcr.io/lewisresearchgroup/lamprey:${IMAGE_TAG:-latest}
     env_file:
       - ./.env
+    environment:
+      - OMICS_URL=http://localhost:8080
     command: bash /app/start-web.sh /opt/conda/bin/python server.py
     volumes:
       - ./app/:/app/
@@ -57,6 +59,7 @@ services:
       - ${DATALAKE}:/datalake/
       - ${COMPUTE}:/compute/
     environment:
+      - OMICS_URL=http://localhost:8080
       - DB_HOST=db
       - DB_NAME=app
       - DB_USER=postgres
