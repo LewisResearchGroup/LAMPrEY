@@ -1,5 +1,7 @@
 # Getting started
 
+LAMPrEY stands for **L**arge-scale **A**utomated **M**ulti-level **Pr**oteomics **E**valuation by P**y**thon. LAMPrEY is a comprehensive quality-control pipeline for large-cohort quantitative proteomics, featuring GUI-based file submission, automated processing with MaxQuant and RawTools, and an interactive analytics dashboard, as well as an application programming interface (API) for programmatic usage and extensibility.
+
 LAMPrEY's graphical user interface consists of three integrated components:
 
 - The Admin space for project and pipelines configuration
@@ -38,4 +40,3 @@ Once installation is complete, the usual next steps are:
 3. [Create a project](how-to-add-a-project.md).
 4. [Create a pipeline](how-to-add-a-pipeline.md).
 5. [Submit RAW files](how-to-submit-raw-files.md).
-
