@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lewisresearchgroup.github.io/LAMPrEY/sitemap.xml
