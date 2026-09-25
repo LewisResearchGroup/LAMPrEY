@@ -75,6 +75,7 @@ METRIC_LABELS = {
     # "calibrated_retention_time_qc2": "Calibrated RT QC2",
     "__tmt_peptides_per_sample__": "Peptides per TMT Sample",
     "__tmt_protein_groups_per_sample__": "Protein Groups per TMT Sample",
+    "__tmt_total_missing_values__": "TMT Total Missing Values",
 }
 
 X_AXIS_LABELS = {
@@ -277,6 +278,7 @@ def callbacks(app):
         return text
 
     def _available_qc_metrics(df, include_synthetic=True):
+        df = _add_tmt_total_missing_values(df)
         if df is None or df.empty:
             base_options = []
         else:
@@ -376,6 +378,30 @@ def callbacks(app):
             "__tmt_protein_groups_per_sample__",
         }
 
+    def _is_expanded_tmt_metric(metric_name):
+        return metric_name in {
+            "__tmt_peptides_per_sample__",
+            "__tmt_protein_groups_per_sample__",
+        }
+
+    def _add_tmt_total_missing_values(df):
+        if df is None or df.empty:
+            return df
+        missing_value_columns = sorted(
+            [
+                column
+                for column in df.columns
+                if isinstance(column, str)
+                and re.match(r"^TMT\d+_missing_values$", column)
+            ],
+            key=lambda column: int(re.search(r"\d+", column).group(0)),
+        )
+        if missing_value_columns:
+            df = df.copy()
+            values = df[missing_value_columns].apply(pd.to_numeric, errors="coerce")
+            df["__tmt_total_missing_values__"] = values.sum(axis=1).astype("Int64")
+        return df
+
     @app.callback(
         Output("qc-metric", "options"),
         Output("qc-metric", "value"),
@@ -405,8 +431,9 @@ def callbacks(app):
     def update_qc_secondary_metric_options(scope_data, current_primary, current_secondary):
         df = pd.DataFrame(T.dashboard_rows(scope_data))
         secondary_options = [
-            option for option in _available_qc_metrics(df, include_synthetic=False)
+            option for option in _available_qc_metrics(df, include_synthetic=True)
             if option["value"] != current_primary
+            and not _is_expanded_tmt_metric(option["value"])
         ]
         secondary_values = {option["value"] for option in secondary_options}
         default_secondary = (
@@ -428,6 +455,7 @@ def callbacks(app):
         df = pd.DataFrame(T.dashboard_rows(data))
         if df.empty:
             return _hidden_graph_response(filename="QC-barplot")
+        df = _add_tmt_total_missing_values(df)
 
         assert pd.value_counts(df.columns).max() == 1, pd.value_counts(df.columns)
 
@@ -900,7 +928,9 @@ def callbacks(app):
         if (
             secondary_metric_in
             and secondary_metric_in != metric_in
-            and _is_synthetic_metric(metric_in or "N_peptides") == _is_synthetic_metric(secondary_metric_in)
+            and _is_expanded_tmt_metric(
+                metric_in or "N_peptides"
+            ) == _is_expanded_tmt_metric(secondary_metric_in)
         ):
             secondary_fig, _, secondary_style = _build_qc_figure(
                 data_in=data_in,
