@@ -141,6 +141,7 @@ INTEGER_METRIC_NAMES = {
 
 INTEGER_METRIC_PATTERNS = (
     re.compile(r"^TMT\d+_missing_values$"),
+    re.compile(r"^__tmt_total_missing_values__$"),
 )
 
 METRIC_PRECISION_OVERRIDES = {

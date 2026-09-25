@@ -581,8 +581,18 @@ def callbacks(app):
         Input("tabs", "value"),
         Input("anomaly-row-order", "value"),
         Input("anomaly-metric-count", "value"),
+        Input("anomaly-proposed-flags", "data"),
     )
-    def plot_shapley(predictions_payload, shapley_values, progress_message, qc_data, tab, row_order, metric_count):
+    def plot_shapley(
+        predictions_payload,
+        shapley_values,
+        progress_message,
+        qc_data,
+        tab,
+        row_order,
+        metric_count,
+        proposal,
+    ):
         config = T.gen_figure_config(
             filename="Anomaly-Detection-Shapley-values",
             editable=False,
@@ -605,6 +615,7 @@ def callbacks(app):
         if tab != "anomaly":
             return {}, config, hidden_graph_style, default_empty_message, {"display": "none"}
 
+        scope_payload = qc_data
         qc_data = pd.DataFrame(T.dashboard_rows(qc_data))
         if qc_data.empty:
             return {}, config, hidden_graph_style, default_empty_message, {"display": "flex"}
@@ -654,6 +665,8 @@ def callbacks(app):
             sample_rank = df_shap.abs().mean(axis=1).sort_values(ascending=False).index
             df_shap = df_shap.reindex(sample_rank)
 
+        ordered_sample_keys = df_shap.index.astype(str).tolist()
+
         metric_rank = _rank_metrics_for_anomaly(df_shap, predictions_df)
         if metric_count == "all":
             df_shap = df_shap.loc[:, metric_rank]
@@ -662,10 +675,16 @@ def callbacks(app):
             df_shap = df_shap.loc[:, metric_rank[:max_metrics]]
 
         label_by_key = dict(zip(row_keys, row_labels))
-        df_shap.index = [label_by_key.get(key, key) for key in df_shap.index]
+        ordered_sample_labels = [
+            label_by_key.get(key, key) for key in ordered_sample_keys
+        ]
+        df_shap.index = ordered_sample_labels
 
         df_plot = df_shap.copy()
-        df_plot.index = [_short_label_keep_ends(v, max_len=30, tail_len=8) for v in df_plot.index]
+        df_plot.index = [
+            _short_label_keep_ends(v, max_len=30, tail_len=8)
+            for v in df_plot.index
+        ]
         df_plot.columns = [_short_label(_pretty_metric_name(c), max_len=30) for c in df_plot.columns]
 
         # Display metrics on y-axis and samples on x-axis.
@@ -712,6 +731,43 @@ def callbacks(app):
 
         # SHAP diverging scale
         heatmap = [t for t in fig.data if t.type == "heatmap"][0]
+        # Use numeric cell centers so proposed samples can be outlined precisely.
+        heatmap.x = list(range(len(ordered_sample_keys)))
+        fig.update_xaxes(type="linear")
+        short_sample_labels = [
+            _short_label_keep_ends(label, max_len=30, tail_len=8)
+            for label in ordered_sample_labels
+        ]
+        heatmap.customdata = [
+            short_sample_labels for _ in range(len(df_plot.columns))
+        ]
+        heatmap.hovertemplate = (
+            "<b>%{customdata}</b><br>"
+            + "QC metric: %{y}<br>SHAP value: %{z:.4f}<extra></extra>"
+        )
+
+        if proposal:
+            scope_sig = hashlib.md5(
+                json.dumps(scope_payload, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            proposed_keys = {
+                str(key) for key in proposal.get("run_keys_to_flag") or []
+            }
+            if proposal.get("scope_sig") == scope_sig:
+                for sample_idx, run_key in enumerate(ordered_sample_keys):
+                    if run_key in proposed_keys:
+                        fig.add_shape(
+                            type="rect",
+                            xref="x",
+                            yref="paper",
+                            x0=sample_idx - 0.5,
+                            x1=sample_idx + 0.5,
+                            y0=0,
+                            y1=1,
+                            line=dict(color="#000000", width=2, dash="dash"),
+                            fillcolor="rgba(0,0,0,0)",
+                            layer="above",
+                        )
         zmin = float(df_plot.values.min())
         zmax = float(df_plot.values.max())
         rng  = max(abs(zmin), abs(zmax))

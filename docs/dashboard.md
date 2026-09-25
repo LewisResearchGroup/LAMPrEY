@@ -7,6 +7,24 @@ The Dashboard consists of two panels:
 - The <span style="color: #2b8fd3;">left panel</span> includes summary stats for the runs contained within the selected pipeline.
 - The <span style="color: #0f9d93;">right panel</span> includes the working area with three tabs: QC Plots, Anomaly detection, and Protein explorer.
 
+## Dashboard workflow
+
+```mermaid
+flowchart LR
+    A["Completed pipeline runs"] --> B["MaxQuant QC"]
+    A --> C["RawTools QC"]
+    A --> D["Protein groups"]
+    B --> E["Cached QC scope"]
+    C --> E
+    D --> F["Parquet protein data"]
+    E --> G["QC plots"]
+    E --> H["Anomaly detection"]
+    F --> I["Protein explorer"]
+    G --> J["Export or review"]
+    H --> J
+    I --> J
+```
+
 ![](img/dashboard_panels.png)
 
 ## Dashboard tabs

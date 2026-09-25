@@ -20,6 +20,28 @@ After successful login the following view opens.
 
 This is the admin panel where users, projects, pipelines, and related resources can be managed.
 
+## Admin workflow
+
+```mermaid
+flowchart TD
+    A["Admin account"] --> B["Create users"]
+    A --> C["Create project"]
+    B --> D["Assign project members"]
+    C --> D
+    C --> E["Create pipeline"]
+    E --> F["Select MaxQuant executable"]
+    E --> G["Upload mqpar.xml"]
+    E --> H["Upload FASTA"]
+    E --> I["Set RawTools arguments"]
+    F --> J["Configured pipeline"]
+    G --> J
+    H --> J
+    I --> J
+    D --> K["Users can access Main"]
+    J --> K
+    J --> L["Completed runs feed Dashboard"]
+```
+
 ## What belongs under the admin panel
 
 The admin panel is where the platform structure is created and maintained.

@@ -4,6 +4,21 @@ The **Main** section is the operational entry point for day-to-day work in LAMPr
 
 It is where users move through the project and pipeline hierarchy, submit new RAW files, and open run-level results.
 
+## Main workflow
+
+```mermaid
+flowchart LR
+    A["Projects"] --> B["Project detail"]
+    B --> C["Pipeline detail"]
+    C --> D["Upload RAW files"]
+    D --> E["Queued run"]
+    E --> F["MaxQuant"]
+    E --> G["RawTools"]
+    F --> H["Run results"]
+    G --> H
+    H --> I["Requeue, cancel, delete, or inspect"]
+```
+
 ## What Main includes
 
 The Main area covers three connected views:
