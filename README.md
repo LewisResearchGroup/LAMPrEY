@@ -1,7 +1,7 @@
 ![Python](https://img.shields.io/badge/python-3.10-blue.svg)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io%2Flewisresearchgroup%2Flamprey-2496ED?logo=docker&logoColor=white)](https://github.com/LewisResearchGroup/LAMPrEY/pkgs/container/lamprey)
 [![Help forum](https://img.shields.io/badge/Docs-Getting_Started-blue)](https://lewisresearchgroup.github.io/LAMPrEY/getting-started/)
-[![Ask DeepWiki About this App](https://deepwiki.com/badge.svg)](https://deepwiki.com/LewisResearchGroup/LAMPrEY)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/LewisResearchGroup/LAMPrEY)
 [![Issue tracking](https://img.shields.io/badge/Issue_tracking-GitHub-blue)](https://github.com/LewisResearchGroup/LAMPrEY/issues)
 
 <p align="center">
