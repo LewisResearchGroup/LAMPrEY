@@ -1,0 +1,127 @@
+.termy {
+    margin: 1.5rem 0;
+}
+
+.termy .highlight,
+.termy pre {
+    display: none;
+}
+
+.termy-ready .highlight,
+.termy-ready pre {
+    display: none;
+}
+
+.termy-terminal {
+    background: #0f172a;
+    border-radius: 14px;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.24);
+    color: #e2e8f0;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.7rem;
+    line-height: 1.6;
+    overflow: hidden;
+}
+
+[data-md-color-scheme="slate"] .termy-terminal {
+    background: #020617;
+    box-shadow: 0 18px 40px rgba(2, 6, 23, 0.42);
+}
+
+.termy-terminal-header {
+    align-items: center;
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.16), rgba(148, 163, 184, 0.08));
+    display: flex;
+    gap: 0.45rem;
+    padding: 0.75rem 1rem;
+}
+
+.termy-terminal-dot {
+    background: #ef4444;
+    border-radius: 999px;
+    display: inline-block;
+    height: 0.72rem;
+    width: 0.72rem;
+}
+
+.termy-terminal-dot:nth-child(2) {
+    background: #f59e0b;
+}
+
+.termy-terminal-dot:nth-child(3) {
+    background: #22c55e;
+}
+
+.termy-terminal-body {
+    min-height: 3.5rem;
+    padding: 0.9rem 1rem 1rem;
+}
+
+.termy-terminal-toolbar {
+    align-items: center;
+    display: flex;
+    gap: 0.45rem;
+    margin-left: auto;
+}
+
+.termy-terminal-btn {
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    padding: 0.36rem 0.6rem;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.termy-terminal-btn:hover {
+    background: rgba(148, 163, 184, 0.2);
+    border-color: rgba(148, 163, 184, 0.3);
+    color: #f8fafc;
+}
+
+.termy-terminal-btn:focus-visible {
+    outline: 2px solid rgba(94, 234, 212, 0.75);
+    outline-offset: 2px;
+}
+
+.termy-line {
+    min-height: 1.6em;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.termy-line + .termy-line {
+    margin-top: 0.1rem;
+}
+
+.termy-prompt {
+    color: #5eead4;
+    user-select: none;
+}
+
+.termy-comment {
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.termy-output {
+    color: #cbd5e1;
+}
+
+.termy-cursor {
+    animation: termy-blink 1s step-end infinite;
+    color: #f8fafc;
+    display: inline-block;
+    margin-left: 0.05rem;
+}
+
+@keyframes termy-blink {
+    50% {
+        opacity: 0;
+    }
+}
