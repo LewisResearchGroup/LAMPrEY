@@ -14,15 +14,26 @@ LAMPrEY (**L**arge-scale **A**utomated **M**ulti-level **Pr**oteomics **E**valua
 
 Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io/LAMPrEY/)
 
-![](docs/img/ProteomicsQC1.png "LAMPrEY interface overview")
+## Cite us
+
+<a href="https://www.scimagojr.com/journalsearch.php?q=23915&amp;tip=sid&amp;clean=0" title="SCImago Journal &amp; Country Rank"><img border="0" align="right" src="https://www.scimagojr.com/journal_img.php?id=23915" alt="SCImago Journal &amp; Country Rank"  /></a>
+
+If you use LAMPrEY in your research, please cite the original paper:
+
+Mario E. Valdés-Tresanco, Soren Wacker, Mario S. Valdés-Tresanco, Andriy Plakhotnyk, Nicholas I. Brodie, Morgan Hepburn, Annegret Ulke-Lemée, Edward L. Huttlin, Ian A. Lewis; LAMPrEY: a Python-Based Automated Quality Control Tool for Large-Scale Proteomics Datasets. Anal. Chem. 10 November 2026; 98 (44): 30098-30105.
+[https://doi.org/10.1021/acs.analchem.6c02944](https://doi.org/10.1021/acs.analchem.6c02944)
+
+<br clear="right">
 
 ## What It Provides
 
-- project and pipeline management through the Django admin
-- automated RAW file processing with [MaxQuant](https://maxquant.org/) and [RawTools](https://github.com/kevinkovalchik/RawTools)
-- upload queue and per-run job management from the pipeline page
-- an interactive QC dashboard with project, pipeline, and uploader filters
-- an authenticated API for programmatic access
+- Project and pipeline management through the Django admin
+- Automated RAW file processing with [MaxQuant](https://maxquant.org/) and [RawTools](https://github.com/kevinkovalchik/RawTools)
+- Upload queue and per-run job management from the pipeline page
+- Interactive QC dashboard with project, pipeline, and uploader filters
+- Authenticated API for programmatic access
+
+![](docs/img/ProteomicsQC1.png "LAMPrEY interface overview")
 
 ## Requirements
 
